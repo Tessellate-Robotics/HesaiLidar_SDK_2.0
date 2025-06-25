@@ -54,6 +54,7 @@ struct PTCHeader_1_0 {
   PTCHeader_1_0() {
     identifier0_ = 0x47;
     identifier1_ = 0x74;
+    cmd_ = 0;
     return_code_ = 0;
     payload_len_ = 0;
   }
@@ -92,7 +93,7 @@ public:
 
   uint8_t GetHeaderIdentifier0() { return header_.identifier0_; }
   uint8_t GetHeaderIdentifier1() { return header_.identifier1_; }
-  int GetHeaderSize() { return sizeof(PTCHeader_1_0); }
+  uint16_t GetHeaderSize() { return sizeof(PTCHeader_1_0); }
   uint8_t GetHeaderReturnCode() const { return header_.return_code_; }
   uint8_t GetHeaderCmd() const {return header_.cmd_; }
   uint32_t GetHeaderPayloadLen() const { return header_.GetPayloadLen();}

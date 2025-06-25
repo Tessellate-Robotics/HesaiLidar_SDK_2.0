@@ -35,11 +35,15 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "udp_p40_parser.h"
 #include "udp_p64_parser.h"
 #include "udp1_4_parser.h"
+#include "udp1_8_parser.h"
 #include "udp2_4_parser.h"
 #include "udp2_5_parser.h"
+#include "udp2_6_parser.h"
+#include "udp2_7_parser.h"
 #include "udp3_1_parser.h"
 #include "udp3_2_parser.h"
 #include "udp4_3_parser.h"
+#include "udp4_7_parser.h"
 #include "udp6_1_parser.h"
 #include "udp7_2_parser.h"
 #include "udp_p40_parser.h"
@@ -61,13 +65,11 @@ namespace lidar
 template <typename T_Point>
 class UdpParser {
  public:
-  UdpParser(uint8_t major, uint8_t minor);
-  UdpParser(std::string lidar_type);
-  UdpParser(UdpPacket &packet);
+  explicit UdpParser(const std::string &lidar_type);
+  explicit UdpParser(const UdpPacket &packet);
   UdpParser();
   virtual ~UdpParser();
-  void CreatGeneralParser(uint8_t major, uint8_t minor);
-  void CreatGeneralParser(std::string lidar_type);
+  void CreatGeneralParser(const std::string& lidar_type);
   void CreatGeneralParser(const UdpPacket& packet);
   GeneralParser<T_Point> *GetGeneralParser();
   void SetGeneralParser(GeneralParser<T_Point> *Parser);
@@ -86,15 +88,15 @@ class UdpParser {
   uint16_t *GetMonitorInfo3();
 
   // covert a origin udp packet to decoded packet, the decode function is in UdpParser module
-  // udp_packet is the origin udp packet, output is the decoded packet
-  int DecodePacket(LidarDecodedPacket<T_Point> &output, const UdpPacket& udpPacket); 
-
   // covert a origin udp packet to decoded data, and pass the decoded data to a frame struct to reduce memory copy
   int DecodePacket(LidarDecodedFrame<T_Point> &frame, const UdpPacket& udpPacket);  
 
   // compute xyzi of points from decoded packet
   // param packet is the decoded packet; xyzi of points after computed is puted in frame    
-  int ComputeXYZI(LidarDecodedFrame<T_Point> &frame, LidarDecodedPacket<T_Point> &packet);
+  int ComputeXYZI(LidarDecodedFrame<T_Point> &frame, int packet_index);
+
+  // parse the detailed content of the fault message message
+  int ParserFaultMessage(UdpPacket& udp_packet, FaultMessageInfo &fault_message_info);
 
   int GetGeneralParser(GeneralParser<T_Point> **parser);
   int SetTransformPara(float x, float y, float z, float roll, float pitch, float yaw);
@@ -102,6 +104,9 @@ class UdpParser {
   std::string GetLidarType() {return lidar_type_decoded_;}
   void SetPcapPlay(bool pcap_time_synchronization, int source_type);
   void SetFrameAzimuth(float frame_start_azimuth);
+  uint32_t GetComputePacketNum() { if (parser_ != nullptr) return parser_->GetComputePacketNum(); else return 0; }
+  void SetComputePacketNumToZero() { if (parser_ != nullptr) parser_->SetComputePacketNumToZero(); }
+  LidarOpticalCenter GetOpticalCenter() { if (parser_ != nullptr) return parser_->GetOpticalCenter(); else return LidarOpticalCenter{}; }
  private:
   GeneralParser<T_Point> *parser_;
   PcapSaver *pcap_saver_;

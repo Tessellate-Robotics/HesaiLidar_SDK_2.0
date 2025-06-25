@@ -80,9 +80,14 @@ public:
         _fpcap.open(pcap_path, std::ios::binary);
         if (_fpcap.is_open()) {
             _fpcap.seekg(0, std::ios::end);
-            _fileData.resize(_fpcap.tellg());
+            size_t _Newsize = _fpcap.tellg();
+            if (_Newsize > static_cast<size_t>(std::numeric_limits<std::streamsize>::max())) {   
+                throw std::runtime_error(std::string("File size out of read range (max ")  + std::to_string(
+                    static_cast<size_t>(std::numeric_limits<std::streamsize>::max())) + std::string(" byte), read failed."));
+            }  
+            _fileData.resize(_Newsize);
             _fpcap.seekg(0, std::ios::beg);
-            _fpcap.read(&_fileData[0], _fileData.size());
+            _fpcap.read(&_fileData[0], static_cast<std::streamsize>(_Newsize));
         }
     }
 
@@ -180,7 +185,7 @@ bool PcapSource::Open() {
     }
     catch (const std::exception& e)
     {
-        std::cerr << e.what() << std::endl;
+        LogError("%s", e.what());
         return false;
     }
 
@@ -192,13 +197,16 @@ std::string PcapSource::pcap_path() const {
 
 int PcapSource::next(UdpPacket& udpPacket, uint16_t u16Len, int flags,
                       int timeout) {                 
+    (void)u16Len;
+    (void)timeout;
+    (void)flags;
     if(_p->eof()) {
         is_pcap_end = true;
         return -1;
     }
     bool ret = _p->read(pcap_record_);
     if (!ret) return -1;
-    if (pcap_record_.incl_len <= 1500) {
+    if (pcap_record_.incl_len <= 1500 && pcap_record_.incl_len > sizeof(Ethernet)) {
         ret = _p->read(payload_.data(), pcap_record_.incl_len);
         if (!ret) return -1;
         switch (((Ethernet*)payload_.data())->ether_type)
@@ -208,11 +216,12 @@ int PcapSource::next(UdpPacket& udpPacket, uint16_t u16Len, int flags,
             {
             case 17:
                 pcap_udp_header_ = *(const UDP*)(payload_.data() + sizeof(PcapIPHeader));
-                u16Len = pcap_record_.incl_len - sizeof(PcapUDPHeader);
+                if (pcap_record_.incl_len < sizeof(PcapUDPHeader)) return 1;
                 memcpy(udpPacket.buffer, payload_.data() + sizeof(PcapUDPHeader), pcap_record_.incl_len - sizeof(PcapUDPHeader));
                 return pcap_record_.incl_len - sizeof(PcapUDPHeader);
                 break;
             case 6:
+                if (pcap_record_.incl_len < sizeof(PcapTCPHeader)) return 1;
                 pcap_tcp_header_ = *(const TCP*)(payload_.data() + sizeof(PcapIPHeader));
                 if (tcp_callback_)
                     return pcap_record_.incl_len - sizeof(PcapTCPHeader);
@@ -229,10 +238,12 @@ int PcapSource::next(UdpPacket& udpPacket, uint16_t u16Len, int flags,
             {
             case 17:
                 pcap_udp_header_ = *(const UDP*)(payload_.data() + sizeof(PcapIPv6Header));
+                if (pcap_record_.incl_len < sizeof(PcapUDPv6Header)) return 1;
                 memcpy(udpPacket.buffer, payload_.data() + sizeof(PcapUDPv6Header), pcap_record_.incl_len - sizeof(PcapUDPv6Header));
                 return pcap_record_.incl_len - sizeof(PcapUDPv6Header);
                 break;
             case 6:
+                if (pcap_record_.incl_len < sizeof(PcapTCPv6Header)) return 1;
                 pcap_tcp_header_ = *(const TCP*)(payload_.data() + sizeof(PcapIPv6Header));
                 if (tcp_callback_)
                     return pcap_record_.incl_len - sizeof(PcapTCPv6Header);
@@ -252,10 +263,12 @@ int PcapSource::next(UdpPacket& udpPacket, uint16_t u16Len, int flags,
                 {
                 case 17:
                     pcap_udp_header_ = *(const UDP*)(payload_.data() + sizeof(PcapIPHeader));
+                    if (pcap_record_.incl_len < sizeof(PcapUDPHeader) + 4) return 1;
                     memcpy(udpPacket.buffer, payload_.data() + sizeof(PcapUDPHeader) + 4, pcap_record_.incl_len - sizeof(PcapUDPHeader) - 4);
                     return pcap_record_.incl_len - sizeof(PcapUDPHeader) - 4;
                     break;
                 case 6:
+                    if (pcap_record_.incl_len < sizeof(PcapTCPHeader) + 4) return 1;
                     pcap_tcp_header_ = *(const TCP*)(payload_.data() + sizeof(PcapIPHeader));
                     if (tcp_callback_)
                         return pcap_record_.incl_len - sizeof(PcapTCPHeader) - 4;
@@ -271,10 +284,12 @@ int PcapSource::next(UdpPacket& udpPacket, uint16_t u16Len, int flags,
                 switch (*((uint8_t*)(payload_.data() + sizeof(Ethernet) + 13)))
                 {
                 case 17:
+                    if (pcap_record_.incl_len < sizeof(PcapUDPv6Header) + 4) return 1;
                     pcap_udp_header_ = *(const UDP*)(payload_.data() + sizeof(PcapIPv6Header));
                     return pcap_record_.incl_len - sizeof(PcapUDPv6Header) - 4;
                     break;
                 case 6:
+                    if (pcap_record_.incl_len < sizeof(PcapTCPv6Header) + 4) return 1;
                     pcap_tcp_header_ = *(const TCP*)(payload_.data() + sizeof(PcapIPv6Header));
                     if (tcp_callback_)
                         return pcap_record_.incl_len - sizeof(PcapTCPv6Header) - 4;
@@ -291,10 +306,9 @@ int PcapSource::next(UdpPacket& udpPacket, uint16_t u16Len, int flags,
             }
             break;
         default:
-        printf("can not parser Ethernet data, type = %x \n", ((Ethernet*)payload_.data())->ether_type);
+        LogWarning("can not parser Ethernet data, type = %x ", ((Ethernet*)payload_.data())->ether_type);
             break;
         }
-
     }
     else {
         ret = _p->move(pcap_record_.incl_len);
@@ -314,16 +328,18 @@ void PcapSource::Close() {
 
 
 bool PcapSource::IsOpened() {
-  return _p->is_open();
+    return _p->is_open();
 }
 
 int PcapSource::Receive(UdpPacket& udpPacket, uint16_t u16Len, int flags,
                        int iTimeout) {
-  return next(udpPacket, u16Len, flags, iTimeout);
+    return next(udpPacket, u16Len, flags, iTimeout);
 }
 
 int PcapSource::Send(uint8_t* u8Buf, uint16_t u16Len, int flags) {
-  return u16Len;
+    (void)u8Buf;
+    (void)flags;
+    return u16Len;
 }
 
 void PcapSource::setPcapPath(std::string path) {

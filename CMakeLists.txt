@@ -4,7 +4,7 @@ set(CMAKE_CXX_STANDARD 14)
 PROJECT(Template)
 set(VERSION_MAJOR 2)
 set(VERSION_MINOR 0)
-set(VERSION_TINY  7)
+set(VERSION_TINY  9)
 configure_file(
   "${CMAKE_CURRENT_SOURCE_DIR}/Version.h.in"
   "${CMAKE_CURRENT_BINARY_DIR}/Version.h"
@@ -15,11 +15,14 @@ set(CMAKE_BUILD_TYPE ON)
 set(CMAKE_BUILD_TYPE Release)
 add_definitions(-O3)
 add_compile_options(-Wall)
+# add_definitions(-DJT128_256)
 
 # 设置生成平台为 x64
-if(_MSC_VER)
+if(MSVC)
+add_compile_options("/source-charset:utf-8")
 set(CMAKE_GENERATOR_PLATFORM x64)
 set(OPENSSL_ROOT_DIR "C:/Program Files/OpenSSL-Win64")
+set(OPENSSL_INCLUDE_DIR ${OPENSSL_ROOT_DIR}/include)
 endif()
 
 
@@ -42,6 +45,7 @@ include_directories(
   libhesai/UdpParserGpu/include
   libhesai/UdpParserGpu/src
   libhesai/PtcClient/include
+  libhesai/SerialClient/include
   libhesai/PtcParser
   libhesai/PtcParser/src
   libhesai/PtcParser/include
@@ -61,6 +65,7 @@ target_link_libraries(sample
   source_lib
   container_lib
   ptcClient_lib
+  serialClient_lib
   ptcParser_lib
   log_lib
   ${OPENSSL_LIBRARIES}

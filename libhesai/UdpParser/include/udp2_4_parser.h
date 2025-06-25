@@ -14,6 +14,12 @@ namespace hesai
 {
   namespace lidar
   {
+#ifdef _MSC_VER
+#define PACKED
+#pragma pack(push, 1)
+#else
+#define PACKED __attribute__((packed))
+#endif
     static constexpr int ET_MAX_CHANNEL_NUM_24 = 512;
     struct ETCorrections_V4 {
       uint8_t delimiter[2];
@@ -22,12 +28,13 @@ namespace hesai
       uint8_t reserved1;
       uint8_t reserved2;
       uint8_t channel_number;
-      uint8_t mirror_nummber_reserved3;
+      uint8_t mirror_number_reserved3;
       uint16_t angle_division;
       int16_t apha;
       int16_t beta;
       int16_t gamma;
-      std::array<float, ET_MAX_CHANNEL_NUM_24> azimuths, elevations;
+      float azimuths[ET_MAX_CHANNEL_NUM_24];
+      float elevations[ET_MAX_CHANNEL_NUM_24];
       int16_t raw_azimuths[ET_MAX_CHANNEL_NUM_24];
       int16_t raw_elevations[ET_MAX_CHANNEL_NUM_24];
       uint8_t SHA_value[32];
@@ -40,13 +47,15 @@ namespace hesai
     uint8_t reserved1;
     uint8_t reserved2;
     uint8_t channel_number;
-    uint8_t mirror_nummber_reserved3;
+    uint8_t mirror_number_reserved3;
     uint16_t angle_division;
     int16_t apha;
     int16_t beta;
     int16_t gamma;
-  };
-
+  } PACKED;
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
   // class Udp2_4Parser
   // parsers packets and computes points for ET25
   // you can parser the upd or pcap packets using the DocodePacket fuction
@@ -63,18 +72,15 @@ namespace hesai
       virtual void LoadCorrectionFile(std::string correction_path);
       virtual int LoadCorrectionString(char *correction_string);
       int LoadCorrectionString_csv(std::string lidar_correction_file);
-      // covert a origin udp packet to decoded packet, the decode function is in UdpParser module
-      // udp_packet is the origin udp packet, output is the decoded packet
-      virtual int DecodePacket(LidarDecodedPacket<T_Point> &output, const UdpPacket& udpPacket); 
       // covert a origin udp packet to decoded data, and pass the decoded data to a frame struct to reduce memory copy
       virtual int DecodePacket(LidarDecodedFrame<T_Point> &frame, const UdpPacket& udpPacket); 
       // compute xyzi of points from decoded packet
       // param packet is the decoded packet; xyzi of points after computed is puted in frame    
-      virtual int ComputeXYZI(LidarDecodedFrame<T_Point> &frame, LidarDecodedPacket<T_Point> &packet);
+      virtual int ComputeXYZI(LidarDecodedFrame<T_Point> &frame, int packet_index);
       ETCorrections_V4 m_ET_corrections;
     protected:
       bool get_correction_file_;
-      int last_frameid_ = 0;
+      int last_frameid_ = -1;
   };
   } // namespace lidar
 } // namespace hesai

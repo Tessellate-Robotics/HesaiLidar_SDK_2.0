@@ -99,85 +99,7 @@ struct HS_LIDAR_TAIL_FT_V2 {
 
   uint32_t GetSeqNum() const { return little_to_native(sequence_num); }
 
-  void CalPktLoss(uint32_t &u32StartSeqNum, uint32_t &u32LastSeqNum, uint32_t &u32LossCount, 
-        uint32_t &u32StartTime, uint32_t &u32TotalLossCount, uint32_t &u32TotalStartSeqNum) const {
-    // bool print = false;
-    if (u32StartSeqNum == 0) {
-      u32LossCount = 0;
-      u32TotalLossCount = 0;
-      u32StartTime = GetMicroTickCount();
-      u32StartSeqNum = sequence_num;
-      u32LastSeqNum = sequence_num;
-      u32TotalStartSeqNum = sequence_num;
-      return;
-    }
-    if (sequence_num - u32LastSeqNum > 1) {
-      u32LossCount += (sequence_num - u32LastSeqNum - 1);
-      u32TotalLossCount += (sequence_num - u32LastSeqNum - 1);
-      // print = true;
-      // if (sequence_num - u32LastSeqNum - 1 > 1000)
-      // printf("%d,  %u, %u\n", sequence_num - u32LastSeqNum - 1, u32LastSeqNum,
-      // sequence_num);
-    }
-
-    // print log every 1s
-    if (u32LossCount != 0 && GetMicroTickCount() - u32StartTime >= 1 * 1000 * 1000) {
-      printf("pkt loss freq: %u/%u\n", u32LossCount,
-             sequence_num - u32StartSeqNum);
-      u32LossCount = 0;
-      u32StartTime = GetMicroTickCount();
-      u32StartSeqNum = sequence_num;
-    }
-
-    u32LastSeqNum = sequence_num;
-  }
-
-  // void CalPktLoss(uint32_t &u32StartSeqNum, uint32_t &u32LastSeqNum, uint32_t &u32LossCount, uint32_t &u32StartTime) const {
-  //   // bool print = false;
-  //   if (sequence_num - u32LastSeqNum > 1) {
-  //     u32LossCount += (sequence_num - u32LastSeqNum - 1);
-  //     // print = true;
-  //     // if (sequence_num - u32LastSeqNum - 1 > 1000)
-  //     // printf("%d,  %u, %u\n", sequence_num - u32LastSeqNum - 1, u32LastSeqNum,
-  //     // sequence_num);
-  //   }
-
-  //   // print log every 1s
-  //   if (GetMicroTickCount() - u32StartTime >= 1 * 1000 * 1000) {
-  //     printf("pkt loss freq: %u/%u\n", u32LossCount,
-  //            sequence_num - u32StartSeqNum);
-  //     u32LossCount = 0;
-  //     u32StartTime = GetMicroTickCount();
-  //     u32StartSeqNum = sequence_num;
-  //   }
-
-  //   u32LastSeqNum = sequence_num;
-  // }
-  static uint32_t GetSeqNumSize() { return sizeof(sequence_num); }
-
-
-  void CalPktLoss() const {
-    static uint32_t u32StartSeqNum = GetSeqNum();
-    static uint32_t u32LastSeqNum = GetSeqNum();
-    static uint32_t u32LossCount = 0;
-    static uint32_t u32StartTime = GetMicroTickCount();
-
-    if (GetSeqNum() - u32LastSeqNum - 1 > 0) {
-      u32LossCount += (GetSeqNum() - u32LastSeqNum - 1);
-    }
-
-    // print log every 10s
-    if (GetMicroTickCount() - u32StartTime >= 10 * 1000 * 1000) {
-      printf("pkt loss freq: %u/%u\n", u32LossCount, 
-          GetSeqNum() - u32StartSeqNum);
-      u32LossCount = 0;
-      u32StartTime = GetMicroTickCount();
-      u32StartSeqNum = GetSeqNum();
-    }
-
-    u32LastSeqNum = GetSeqNum();
-  }
-  int64_t GetMicroLidarTimeU64() const {
+  uint64_t GetMicroLidarTimeU64() const {
     if (utc[0] != 0) {
 			struct tm t = {0};
 			t.tm_year = utc[0] + 100;
@@ -185,7 +107,7 @@ struct HS_LIDAR_TAIL_FT_V2 {
 				t.tm_year -= 100;
 			}
 			t.tm_mon = utc[1] - 1;
-			t.tm_mday = utc[2];
+			t.tm_mday = utc[2] + 1;
 			t.tm_hour = utc[3];
 			t.tm_min = utc[4];
 			t.tm_sec = utc[5];
@@ -195,14 +117,11 @@ struct HS_LIDAR_TAIL_FT_V2 {
   GetTimeZoneInformation(&tzi);
   long int timezone =  tzi.Bias * 60;
 #endif
-			return (mktime(&t) - timezone) * 1000000 + GetTimestamp();
+      return (mktime(&t) - timezone - 86400) * 1000000 + GetTimestamp();
 		}
 		else {
       uint32_t utc_time_big = *(uint32_t*)(&utc[0] + 2);
-      int64_t unix_second = ((utc_time_big >> 24) & 0xff) |
-              ((utc_time_big >> 8) & 0xff00) |
-              ((utc_time_big << 8) & 0xff0000) |
-              ((utc_time_big << 24));
+      uint64_t unix_second = big_to_native(utc_time_big);
       return unix_second * 1000000 + GetTimestamp();
 		}
 
@@ -239,7 +158,7 @@ struct HS_LIDAR_HEADER_FT_V2 {
   uint8_t reserved[8];
 
   uint16_t GetChannelNum() const { return channel_num; }
-  double GetDistUnit() const { return dist_unit / 1000.f; }
+  float GetDistUnit() const { return dist_unit / 1000.f; }
   uint8_t GetEchoCount() const { return echo; }
   bool IsFirstBlockLastReturn() const {
     return echo == kFirstBlockLastReturn;

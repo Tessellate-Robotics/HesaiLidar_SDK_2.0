@@ -79,7 +79,7 @@ class MemBufferSub : public MemBuffer {
 
  public:
   MemBufferSub(MemBufferPtr ptr, int start, int size)
-      : ptr_(ptr), start_(start_), sub_size_(size) {}
+      : ptr_(ptr), start_(start), sub_size_(size) {}
   virtual void *GpuPtr() { return (char*)ptr_->GpuPtr() + start_; }
   virtual void *CpuPtr() { return (char*)ptr_->CpuPtr() + start_; }
   void HostToDevice(int start, int size) override {
@@ -189,6 +189,8 @@ struct MemBufferClass {
   void Wait() { buf->Wait(); }
   void HostToDevice() { buf->HostToDevice(); }
   void DeviceToHost() { buf->DeviceToHost(); }
+  void HostToDevice(int start, int size) { buf->HostToDevice(start, size); };
+  void DeviceToHost(int start, int size) { buf->DeviceToHost(start, size); };
   uint64_t Size() const { return buf->Size(); }
   void flush(){buf->flush();}
 };

@@ -102,7 +102,7 @@ namespace hesai
       }
       
       // get us time
-      int64_t GetMicroLidarTimeU64() const {
+      uint64_t GetMicroLidarTimeU64() const {
         if (m_u8UTC[0] != 0) {
           struct tm t = {0};
           t.tm_year = m_u8UTC[0];
@@ -110,7 +110,7 @@ namespace hesai
             t.tm_year -= 100;
           }
           t.tm_mon = m_u8UTC[1] - 1;
-          t.tm_mday = m_u8UTC[2];
+          t.tm_mday = m_u8UTC[2] + 1;
           t.tm_hour = m_u8UTC[3];
           t.tm_min = m_u8UTC[4];
           t.tm_sec = m_u8UTC[5];
@@ -120,14 +120,11 @@ namespace hesai
   GetTimeZoneInformation(&tzi);
   long int timezone =  tzi.Bias * 60;
 #endif
-          return (mktime(&t) - timezone) * 1000000 + GetTimestamp();
+          return (mktime(&t) - timezone - 86400) * 1000000 + GetTimestamp();
         }
         else {
           uint32_t utc_time_big = *(uint32_t*)(&m_u8UTC[0] + 2);
-          int64_t unix_second = ((utc_time_big >> 24) & 0xff) |
-                  ((utc_time_big >> 8) & 0xff00) |
-                  ((utc_time_big << 8) & 0xff0000) |
-                  ((utc_time_big << 24));
+          uint64_t unix_second = big_to_native(utc_time_big);
           return unix_second * 1000000 + GetTimestamp();
         }
       }
@@ -150,20 +147,6 @@ namespace hesai
       uint32_t m_u32SeqNum;
       uint32_t GetSeqNum() const { return little_to_native(m_u32SeqNum); }
       static uint32_t GetSeqNumSize() { return sizeof(m_u32SeqNum); }
-      void CalPktLoss(uint32_t &u32StartSeqNum, uint32_t &u32LastSeqNum, uint32_t &u32LossCount, uint32_t &u32StartTime) const {
-        // bool print = false;
-        if (m_u32SeqNum - u32LastSeqNum > 1) {
-          u32LossCount += (m_u32SeqNum - u32LastSeqNum - 1);
-          // print = true;
-        }
-       if (GetMicroTickCount() - u32StartTime >= 1 * 1000 * 1000) {
-          printf("pkt loss freq: %u/%u\n", u32LossCount, m_u32SeqNum - u32StartSeqNum);
-          u32LossCount = 0;
-          u32StartTime = GetMicroTickCount();
-          u32StartSeqNum = m_u32SeqNum;
-        }
-        u32LastSeqNum = m_u32SeqNum;
-      }
       void Print() const {
         printf("HS_LIDAR_TAIL_SEQ_NUM_ET_V4:\n");
         printf("seqNum: %u\n", GetSeqNum());
@@ -209,7 +192,7 @@ namespace hesai
      
       uint8_t GetLaserNum() const { return m_u8LaserNum; }
       uint8_t GetBlockNum() const { return m_u8BlockNum; }
-      double GetDistUnit() const { return m_u8DistUnit / 1000.f; }
+      float GetDistUnit() const { return m_u8DistUnit / 1000.f; }
       uint8_t GetEchoCount() const { return m_u8EchoCount; }
       uint8_t GetSeqNum() const { return m_u8SeqNum; }
 

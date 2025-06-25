@@ -41,6 +41,7 @@ enum SourceType
   DATA_FROM_LIDAR = 1,
   DATA_FROM_PCAP = 2,
   DATA_FROM_ROS_PACKET = 3,
+  DATA_FROM_SERIAL = 4,
 };
 
 enum PtcMode
@@ -88,15 +89,20 @@ typedef struct DecoderParam
   bool pcap_play_synchronization = true;
   //start a new frame when lidar azimuth greater than frame_start_azimuth
   //range:[0-360), set frame_start_azimuth less than 0 if you do want to use it
-  float frame_start_azimuth = 1;
+  float frame_start_azimuth = 0;
   // enable the udp packet loss detection tool
   // it forbiddens parser udp packet while trun on this tool
   bool enable_packet_loss_tool = false;
+  bool enable_packet_timeloss_tool = false;
+  bool packet_timeloss_tool_continue = false;
   // 0 use point cloud timestamp
   // 1 use sdk receive timestamp
   uint16_t use_timestamp_type = point_cloud_timestamp;
   int fov_start = -1;
   int fov_end = -1;
+  bool distance_correction_lidar_flag = false;
+  bool xt_spot_correction = false;
+  uint32_t socket_buffer_size = 0;
 } DecoderParam;
 
 ///< The LiDAR input parameter
@@ -111,15 +117,23 @@ typedef struct InputParam
   std::string multicast_ip_address = "";  
   ///< Address of host
   std::string host_ip_address = "Your host ip"; 
+  ///< port filter
+  uint16_t device_udp_src_port = 0;
+  uint16_t device_fault_port = 0;
   ///< udp packet port number       
   uint16_t udp_port = 2368;   
   ///< ptc packet port number                
-  uint16_t ptc_port = 9347;                 
-  bool read_pcap = true;          ///< true: The driver will process the pcap through pcap_path. false: The driver will
-                                   ///< Get data from online LiDAR
+  uint16_t ptc_port = 9347;
+  ///< serial port and baudrate
+  std::string rs485_com = "/dev/ttyUSB0";
+  std::string rs232_com = "/dev/ttyUSB1";
+  int point_cloud_baudrate = 3125000;
+  int rs485_baudrate = 115200;   
+  int rs232_baudrate = 9600;          
   std::string pcap_path = "Your pcap file path";  ///< Absolute path of pcap file
   std::string correction_file_path = "Your correction file path";   ///< Path of angle calibration files(angle.csv).Only used for internal debugging.
   std::string firetimes_path = "Your firetime file path";  ///< Path of firetime files(angle.csv).
+  std::string correction_save_path = "";
   /// certFile          Represents the path of the user's certificate
   const char* certFile = nullptr;
   /// privateKeyFile    Represents the path of the user's private key
@@ -141,6 +155,7 @@ typedef struct InputParam
   std::string ros_send_ptp_topic = NULL_TOPIC;
   std::string ros_send_correction_topic = NULL_TOPIC;
   std::string ros_send_firetime_topic = NULL_TOPIC;
+  std::string ros_send_imu_topic = NULL_TOPIC;
 
   std::string ros_recv_correction_topic = NULL_TOPIC;
   std::string ros_recv_packet_topic = NULL_TOPIC;
@@ -158,9 +173,9 @@ typedef struct DriverParam
   ///< The frame id of LiDAR message    
   std::string frame_id = "hesai";  
   ///< Lidar type
-  std::string lidar_type = "AT128";  
-  int log_level = LOG_DEBUG | LOG_INFO; //
-  int log_Target = LOG_TARGET_CONSOLE | LOG_TARGET_FILE;
+  std::string lidar_type = "";  
+  uint8_t log_level = LOG_INFO | LOG_WARNING | LOG_ERROR | LOG_FATAL; //
+  uint8_t log_Target = LOG_TARGET_CONSOLE | LOG_TARGET_FILE;
   std::string log_path = "./log.log";
 } DriverParam;
 }  // namespace lidar

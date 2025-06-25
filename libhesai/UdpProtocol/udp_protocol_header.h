@@ -43,12 +43,27 @@ namespace lidar
 #define PACKED __attribute__((packed))
 #endif
 
-static bool IsLittleEndian() {
-  const int a = 1;
-  const unsigned char *p = reinterpret_cast<const unsigned char *>(&a);
+union {
+  uint32_t i;
+  uint8_t c[4]; 
+} u = {0x01020304};
+    
+inline bool IsLittleEndian() { 
+  if (u.c[0] == 0x04)
+    return true; 
+  else return false;
+}  
 
-  return *p == 1 ? true : false;
-}
+template<typename T, std::enable_if_t<std::is_integral<T>::value, int> = 0>  
+T reverseBytes(T value) {  
+    if (sizeof(T) == 1) return value;
+    T reversed = 0;  
+    for (size_t i = 0; i < sizeof(T); ++i) {  
+        reversed = (reversed << 8) | (static_cast<unsigned char>(value) & 0xFF);  
+        value >>= 8;  
+    }  
+    return reversed;  
+}  
 
 template <typename T>
 T little_to_native(T data) {
@@ -56,12 +71,18 @@ T little_to_native(T data) {
   if (IsLittleEndian()) {
     out = data;
   } else {
-    unsigned char *pSrc = reinterpret_cast<unsigned char *>(&data +
-                                                            sizeof(data) - 1),
-                  *pDst = reinterpret_cast<unsigned char *>(&out);
-    for (size_t i = 0; i < sizeof(data); i++) {
-      *pDst++ = *pSrc--;
-    }
+    out = reverseBytes(data);
+  }
+  return out;
+}
+
+template <typename T>
+T big_to_native(T data) {
+  T out = 0;
+  if (!IsLittleEndian()) {
+    out = data;
+  } else {
+    out = reverseBytes(data);
   }
   return out;
 }

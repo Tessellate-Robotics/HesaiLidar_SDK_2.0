@@ -31,9 +31,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <inttypes.h>
 #include <stdio.h>
 #include "Version.h"
-#ifndef _MSC_VER
-#include <unistd.h>
-#endif
+#include <chrono>
 using namespace hesai::lidar;
 
 template <typename T_Point>
@@ -48,6 +46,14 @@ Lidar<T_Point>::Lidar() {
   mutex_list_ = new std::mutex[GetAvailableCPUNum()];
   handle_buffer_size_ = kPacketBufferSize;
   source_ = nullptr;
+  ptc_client_ = nullptr;
+  std::fill(init_finish_, init_finish_ + 4, false);
+  ptc_port_ = 0;
+  udp_port_ = 0;
+  parser_thread_ptr_ = nullptr;
+  init_set_ptc_ptr_ = nullptr;
+  serial_client_ = nullptr;
+  source_rs232_ = nullptr;
 }
 
 template <typename T_Point>
@@ -55,13 +61,23 @@ Lidar<T_Point>::~Lidar() {
   running_ = false;
   udp_thread_running_ = false;
   parser_thread_running_ = false;
-  if (recieve_packet_thread_ptr_) recieve_packet_thread_ptr_->join();
+  if (recieve_packet_thread_ptr_) {
+    recieve_packet_thread_ptr_->join();
     delete recieve_packet_thread_ptr_;
-  recieve_packet_thread_ptr_ = nullptr;
+    recieve_packet_thread_ptr_ = nullptr;
+  }
 
-  if (parser_thread_ptr_) parser_thread_ptr_->join();
-  delete parser_thread_ptr_;
-  parser_thread_ptr_ = nullptr;
+  if (parser_thread_ptr_) {
+    parser_thread_ptr_->join();
+    delete parser_thread_ptr_;
+    parser_thread_ptr_ = nullptr;
+  }
+
+  if (init_set_ptc_ptr_) {
+    init_set_ptc_ptr_->join();
+    delete init_set_ptc_ptr_;
+    init_set_ptc_ptr_ = nullptr;
+  }
   if (handle_thread_count_ > 1) {
     for (int i = 0; i < handle_thread_count_; i++) {
       if (handle_thread_vec_[i]) {
@@ -80,6 +96,16 @@ Lidar<T_Point>::~Lidar() {
   if (ptc_client_ != nullptr) {
     delete ptc_client_;
     ptc_client_ = nullptr;
+  }
+
+  if (serial_client_ != nullptr) {
+    delete serial_client_;
+    serial_client_ = nullptr;
+  }
+
+  if (source_rs232_ != nullptr) {
+    delete source_rs232_;
+    source_rs232_ = nullptr;
   }
 
   if (source_ != nullptr) {
@@ -111,13 +137,41 @@ int Lidar<T_Point>::Init(const DriverParam& param) {
     /**********************************************************************************/
 
     /***************************Init source****************************************/
-    int packet_interval = 10;
     udp_port_ = param.input_param.udp_port;
     if (param.input_param.source_type == 2) {
+      int packet_interval = 10;
       source_ = new PcapSource(param.input_param.pcap_path, packet_interval);
       source_->Open();
     }
     else if(param.input_param.source_type == 1){
+      source_ = new SocketSource(param.input_param.udp_port, param.input_param.multicast_ip_address);
+      source_->Open();
+    }
+    else if(param.input_param.source_type == 4){
+      source_ = new SerialSource(param.input_param.rs485_com, param.input_param.rs485_baudrate, param.input_param.point_cloud_baudrate);
+      source_rs232_ = new SerialSource(param.input_param.rs232_com, param.input_param.rs232_baudrate);
+      source_->SetReceiveStype(SERIAL_POINT_CLOUD_RECV);
+      source_->Open();
+      if (!source_->IsOpened()) LogError("recv point cloud serial open error");
+      source_rs232_->SetReceiveStype(SERIAL_COMMAND_RECV);
+      source_rs232_->Open();
+      if (!source_rs232_->IsOpened()) LogError("send cmd serial open error");
+      serial_client_ = new SerialClient();
+      serial_client_->SetSerial(source_rs232_, source_);
+    }
+    parser_thread_running_ = param.decoder_param.enable_parser_thread;
+    udp_thread_running_ = param.decoder_param.enable_udp_thread;
+    if (param.decoder_param.socket_buffer_size > 0) {
+      source_->SetSocketBufferSize(param.decoder_param.socket_buffer_size);
+    }
+    
+    use_timestamp_type_ = param.decoder_param.use_timestamp_type;
+    fov_start_ = param.decoder_param.fov_start;
+    fov_end_ = param.decoder_param.fov_end;
+    SetThreadNum(param.decoder_param.thread_num);
+    /********************************************************************************/
+#ifndef JT128_256
+    if (param.input_param.source_type == 1) {
       ptc_client_ = new (std::nothrow) PtcClient(param.input_param.device_ip_address
                                                   , param.input_param.ptc_port
                                                   , false
@@ -126,81 +180,106 @@ int Lidar<T_Point>::Init(const DriverParam& param) {
                                                   , param.input_param.certFile
                                                   , param.input_param.privateKeyFile
                                                   , param.input_param.caFile
-                                                  , 1000
-                                                  , 1000);
-      if (param.input_param.standby_mode != -1) {
-        if(!SetStandbyMode(ptc_client_, param.input_param.standby_mode)) {
-          std::cout << "set standby mode successed!" << std::endl;
-        } else {
-          std::cout << "set standby mode failed!" << std::endl;
-        }
-      }
-      if (param.input_param.speed != -1) {
-        if(!SetSpinSpeed(ptc_client_, param.input_param.speed)) {
-          std::cout << "set speed successed!" << std::endl;
-        } else {
-          std::cout << "set speed failed!" << std::endl;
-        }
-      }
-      source_ = new SocketSource(param.input_param.udp_port, param.input_param.multicast_ip_address);
-      source_->Open();
+                                                  , 2000
+                                                  , 2000);
+      init_set_ptc_ptr_ = new std::thread(std::bind(&Lidar<T_Point>::InitSetPtc, this, param));
     }
-    parser_thread_running_ = param.decoder_param.enable_parser_thread;
-    udp_thread_running_ = param.decoder_param.enable_udp_thread;
-    
-    use_timestamp_type_ = param.decoder_param.use_timestamp_type;
-    fov_start_ = param.decoder_param.fov_start;
-    fov_end_ = param.decoder_param.fov_end;
-    SetThreadNum(param.decoder_param.thread_num);
-    /********************************************************************************/
-
-    /***************************Init decoder****************************************/   
+#endif
     // clock_t start_time, end_time;
     // double time_interval = 0;
     UdpPacket udp_packet;
-    LidarDecodedPacket<T_Point> decoded_packet;
     // start_time = clock();
-    while (udp_parser_->GetParser() == nullptr) {
+    while (udp_parser_->GetParser() == nullptr && running_) {
       int ret = this->GetOnePacket(udp_packet);
-      // Avoid configuring the actual lidar to have problems with the lidar connection causing the program card here.
-      if (param.input_param.source_type == 1 && ret == -1) return ret;
       if (ret == -1) continue;
-      this->DecodePacket(decoded_packet, udp_packet);
+      this->DecodePacket(frame_, udp_packet);
       // end_time = clock();
       // time_interval = double(end_time-start_time) / CLOCKS_PER_SEC;
     }
+    frame_.packet_num = 0;
     if (udp_parser_->GetParser() == nullptr) {
       return res;
     }
+    udp_parser_->GetParser()->SetLidarType(param.lidar_type);
+    udp_parser_->GetParser()->SetOpticalCenterFlag(param.decoder_param.distance_correction_lidar_flag);
+    udp_parser_->GetParser()->SetXtSpotCorrection(param.decoder_param.xt_spot_correction);
+    init_finish_[FaultMessParse] = true;
+    LogDebug("finish 0: The basic initialisation is complete");
+    
+    /***************************Init decoder****************************************/   
     udp_parser_->SetTransformPara(param.decoder_param.transform_param.x, \
                                   param.decoder_param.transform_param.y, \
                                   param.decoder_param.transform_param.z, \
                                   param.decoder_param.transform_param.roll, \
                                   param.decoder_param.transform_param.pitch, \
                                   param.decoder_param.transform_param.yaw);
+    udp_parser_->SetPcapPlay(param.decoder_param.pcap_play_synchronization, param.input_param.source_type);
+    udp_parser_->SetFrameAzimuth(param.decoder_param.frame_start_azimuth);
+    udp_parser_->GetParser()->EnablePacketLossTool(param.decoder_param.enable_packet_loss_tool);
+    udp_parser_->GetParser()->EnablePacketTimeLossTool(param.decoder_param.enable_packet_timeloss_tool);
+    udp_parser_->GetParser()->PacketTimeLossToolContinue(param.decoder_param.packet_timeloss_tool_continue);
     switch (param.input_param.source_type)
     {
-    case 1:
-      if (LoadCorrectionForUdpParser() == -1) {
-        std::cout << "---Failed to obtain correction file from lidar!---" << std::endl;
-        LoadCorrectionFile(param.input_param.correction_file_path);
+    case 1: 
+#ifdef JT128_256
+      LoadCorrectionFile(param.input_param.correction_file_path);
+#else
+      {
+        while ((!ptc_client_->IsOpen()) && running_) 
+          std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        if (LoadCorrectionForUdpParser() == -1) {
+          LogWarning("---Failed to obtain correction file from lidar!---");
+          LoadCorrectionFile(param.input_param.correction_file_path);
+        }
       }
+#endif
       break;
     case 2:
       LoadCorrectionFile(param.input_param.correction_file_path);
       break;
     case 3:
       LoadCorrectionFile(param.input_param.correction_file_path);
+      break;
+    case 4:
+      if (LoadCorrectionForSerialParser(param.input_param.correction_save_path) != 0) {
+        LogWarning("---Failed to obtain correction file from lidar!---");
+        LoadCorrectionFile(param.input_param.correction_file_path);
+      }
+      break;
     default:
       break;
     }
     LoadFiretimesFile(param.input_param.firetimes_path);
+    init_finish_[PointCloudParse] = true;
+    LogDebug("finish 2: The angle calibration file is finished loading");
     /********************************************************************************/
-    udp_parser_->SetPcapPlay(param.decoder_param.pcap_play_synchronization, param.input_param.source_type);
-    udp_parser_->SetFrameAzimuth(param.decoder_param.frame_start_azimuth);
-    udp_parser_->GetParser()->EnablePacketLossTool(param.decoder_param.enable_packet_loss_tool);
     res = 0;
     return res;
+}
+
+template <typename T_Point>
+void Lidar<T_Point>::InitSetPtc(const DriverParam param) {
+  while(running_) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    if (!ptc_client_->IsOpen()) continue;
+    init_finish_[PtcInitFinish] = true;
+    LogDebug("finish 1: ptc connection successfully");
+    if (param.input_param.standby_mode != -1) {
+      if(!SetStandbyMode(ptc_client_, param.input_param.standby_mode)) {
+        LogInfo("set standby mode successed!");
+      } else {
+        LogWarning("set standby mode failed!");
+      }
+    }
+    if (param.input_param.speed != -1) {
+      if(!SetSpinSpeed(ptc_client_, param.input_param.speed)) {
+        LogInfo("set speed successed!");
+      } else {
+        LogWarning("set speed failed!");
+      }
+    }
+    break;
+  }
 }
 
 template <typename T_Point>
@@ -209,7 +288,7 @@ int Lidar<T_Point>::LoadCorrectionFromROSbag() {
     return udp_parser_->LoadCorrectionString(
         (char *)correction_string_.data());
   } else {
-    std::cout << __func__ << "udp_parser_ nullptr\n";
+    LogError("udp_parser_ nullptr");
     return -1;
   }
   return 0;
@@ -219,7 +298,7 @@ template <typename T_Point>
 int Lidar<T_Point>::LoadCorrectionForUdpParser() {
   u8Array_t sData;
   if (ptc_client_->GetCorrectionInfo(sData) != 0) {
-    std::cout << __func__ << "get correction info fail\n";
+    LogError("LoadCorrectionForUdpParser get correction info fail");
     return -1;
   }
   correction_string_ = sData;
@@ -227,7 +306,7 @@ int Lidar<T_Point>::LoadCorrectionForUdpParser() {
     return udp_parser_->LoadCorrectionString(
         (char *)sData.data());
   } else {
-    std::cout << __func__ << "udp_parser_ nullptr\n";
+    LogError("udp_parser_ nullptr");
     return -1;
   }
   return 0;
@@ -238,7 +317,7 @@ int Lidar<T_Point>::SaveCorrectionFile(std::string correction_save_path) {
   int ret = -1;
   u8Array_t raw_data;
   if (ptc_client_->GetCorrectionInfo(raw_data) != 0) {
-    std::cout << __func__ << "get correction info fail\n";
+    LogError("SaveCorrectionFile get correction info fail");
     return ret;
   }
   correction_string_ = raw_data;
@@ -250,9 +329,40 @@ int Lidar<T_Point>::SaveCorrectionFile(std::string correction_save_path) {
     out_file.close();
     return ret;
   } else {
-    std::cout << __func__ << "create correction file fail\n";
+    LogError("create correction file fail");
     return ret;
   }
+}
+
+template <typename T_Point>
+int Lidar<T_Point>::LoadCorrectionForSerialParser(std::string correction_save_path) {
+  u8Array_t sData;
+  int ret = serial_client_->GetCorrectionInfo(sData);
+  if (ret != 0) {
+    LogError("get correction error, ret:%d", ret);
+    return ret;
+  }
+
+  // save
+  if (correction_save_path != "") {
+    std::string correction_content_str = (char*) sData.data();
+    std::ofstream out_file(correction_save_path, std::ios::out);
+    if(out_file.is_open()) {
+      out_file << correction_content_str;
+      out_file.close();
+    } else {
+      LogError("create correction file fail, save correction file error");
+    }
+  }
+
+  if (udp_parser_) {
+    return udp_parser_->LoadCorrectionString(
+        (char *)sData.data());
+  } else {
+    LogError("udp_parser_ nullptr");
+    return -1;
+  }
+  return 0;
 }
 
 template <typename T_Point>
@@ -262,7 +372,7 @@ int Lidar<T_Point>::SetLidarType(std::string lidar_type) {
     udp_parser_->CreatGeneralParser(lidar_type);
     ret = 0;
   } else
-    std::cout << __func__ << "udp_parser_ nullptr\n";
+    LogError("udp_parser_ nullptr");
 
   return ret;
 }
@@ -282,7 +392,7 @@ int Lidar<T_Point>::StartRecordPcap(std::string record_path) {
     EnableRecordPcap(true);
     udp_parser_->GetPcapSaver()->Save();
   } else
-    std::cout << __func__ << "udp_parser_ nullptr\n";
+    LogError("udp_parser_ nullptr");
 
   return ret;
 }
@@ -295,45 +405,48 @@ int Lidar<T_Point>::SaveUdpPacket(const std::string &record_path,
     ret = udp_parser_->GetPcapSaver()->Save(record_path, packets,
                                                          port);
   } else
-    std::cout << __func__ << "udp_parser_ nullptr\n";
+    LogError("udp_parser_ nullptr");
 
   return ret;
 }
 
 template <typename T_Point>
-int Lidar<T_Point>::ComputeXYZI(LidarDecodedPacket<T_Point> &packet) {
+int Lidar<T_Point>::ComputeXYZI(int packet_index) {
 
-  decoded_packets_buffer_.push_back(std::move(packet));
+  decoded_packets_buffer_.push_back(std::move(packet_index));
   return 0;
 
 }
 
 template <typename T_Point>
-int Lidar<T_Point>::DecodePacket(LidarDecodedPacket<T_Point> &output, const UdpPacket& udp_packet) {
-  if (udp_parser_) {
-    udp_parser_->DecodePacket(output,udp_packet);
-    return 0;
-  } else
-    std::cout << __func__ << "udp_parser_ nullptr\n";
-
-  return -1;
-} 
-
-template <typename T_Point>
 int Lidar<T_Point>::DecodePacket(LidarDecodedFrame<T_Point> &frame, const UdpPacket& udp_packet) {
   if (udp_parser_) {
-    udp_parser_->DecodePacket(frame,udp_packet);
-    return 0;
+    return udp_parser_->DecodePacket(frame, udp_packet);
   } else
-    std::cout << __func__ << "udp_parser_ nullptr\n";
+    LogError("udp_parser_ nullptr");
 
   return -1;
 } 
 
 
 template <typename T_Point>
-bool Lidar<T_Point>::ComputeXYZIComplete(int index) {
-  return frame_.packet_num == (uint32_t)index;
+bool Lidar<T_Point>::ComputeXYZIComplete(uint32_t index) {
+  if (udp_parser_ == nullptr) return false;
+  if (udp_parser_->GetComputePacketNum() == index) {
+    udp_parser_->SetComputePacketNumToZero();
+    return true;
+  }
+  return false;
+}
+
+template <typename T_Point>
+int Lidar<T_Point>::ParserFaultMessage(UdpPacket& udp_packet, FaultMessageInfo &fault_message_info) {
+  if (udp_parser_) {
+    return udp_parser_->ParserFaultMessage(udp_packet, fault_message_info);
+  } else
+    LogError("udp_parser_ nullptr");
+
+  return -1;
 }
 
 template <typename T_Point>
@@ -342,7 +455,7 @@ void Lidar<T_Point>::LoadCorrectionFile(std::string correction_path) {
     udp_parser_->LoadCorrectionFile(correction_path);
     return ;
   } else
-    std::cout << __func__ << "udp_parser_ nullptr\n";
+    LogError("udp_parser_ nullptr");
 
   return ;
 }
@@ -354,7 +467,7 @@ int Lidar<T_Point>::LoadCorrectionString(char *correction_string) {
     return udp_parser_->LoadCorrectionString(correction_string);
 
   } else
-    std::cout << __func__ << "udp_parser_ nullptr\n";
+    LogError("udp_parser_ nullptr");
 
   return ret;
 }
@@ -365,7 +478,7 @@ void Lidar<T_Point>::LoadFiretimesFile(std::string firetimes_path) {
     udp_parser_->LoadFiretimesFile(firetimes_path);
     return ;
   } else
-    std::cout << __func__ << "udp_parser_ nullptr\n";
+    LogError("udp_parser_ nullptr");
 
   return ;
 }
@@ -378,7 +491,7 @@ int Lidar<T_Point>::SaveUdpPacket(const std::string &record_path,
     ret = udp_parser_->GetPcapSaver()->Save(record_path, packets,
                                                          port);
   } else
-    std::cout << __func__ << "udp_parser_ nullptr\n";
+    LogError("udp_parser_ nullptr");
 
   return ret;
 }
@@ -390,7 +503,7 @@ int Lidar<T_Point>::StopRecordPcap() {
     EnableRecordPcap(false);
     udp_parser_->GetPcapSaver()->close();
   } else
-    std::cout << __func__ << "udp_parser_ nullptr\n";
+    LogError("udp_parser_ nullptr");
 
   return ret;
 }
@@ -401,7 +514,7 @@ int Lidar<T_Point>::GetGeneralParser(GeneralParser<T_Point> **parser) {
   if (udp_parser_)
     ret = udp_parser_->GetGeneralParser(parser);
   else
-    std::cout << __func__ << "udp_parser_ nullptr\n";
+    LogError("udp_parser_ nullptr");
 
   return ret;
 }
@@ -410,7 +523,7 @@ template <typename T_Point>
 void Lidar<T_Point>::RecieveUdpThread() {
   if(!udp_thread_running_) return;
   // uint32_t u32StartTime = GetMicroTickCount();
-  std::cout << "Lidar::Recieve Udp Thread start to run\n";
+  LogInfo("Lidar::Recieve Udp Thread start to run");
 #ifdef _MSC_VER
   SetThreadPriorityWin(THREAD_PRIORITY_TIME_CRITICAL);
 #else
@@ -434,19 +547,21 @@ void Lidar<T_Point>::RecieveUdpThread() {
       case 0:
         if (is_timeout_ == false) {
           udp_packet.packet_len = AT128E2X_PACKET_LEN; 
+          udp_packet.buffer[0] = 0;
+          udp_packet.buffer[1] = 0;
           origin_packets_buffer_.emplace_back(udp_packet);
           is_timeout_ = true;
         } 
         break;
       case kFaultMessageLength:
-        udp_packet.packet_len = len;
+        udp_packet.packet_len = static_cast<uint16_t>(len);
         origin_packets_buffer_.emplace_back(udp_packet);
         break;
       case GPS_PACKET_LEN:
         break;
       default :
         if (len > 0) {
-          udp_packet.packet_len = len;
+          udp_packet.packet_len = static_cast<uint16_t>(len);
           origin_packets_buffer_.emplace_back(udp_packet);
           is_timeout_ = false;
         }
@@ -463,30 +578,26 @@ template <typename T_Point>
 void Lidar<T_Point>::ParserThread() {
   if(!parser_thread_running_) return;
   int nUDPCount = 0;
-  std::cout << "Lidar::ParserThread start to run\n";
+  LogInfo("Lidar::ParserThread start to run");
 #ifdef _MSC_VER
   SetThreadPriorityWin(THREAD_PRIORITY_TIME_CRITICAL);
 #else
   SetThreadPriority(SCHED_FIFO, SHED_FIFO_PRIORITY_MEDIUM);
 #endif
   while (running_) {
-    LidarDecodedPacket<T_Point> decoded_packet;
-    bool decoded_result = decoded_packets_buffer_.try_pop_front(decoded_packet);
+    int decoded_packet_index;
+    bool decoded_result = decoded_packets_buffer_.try_pop_front(decoded_packet_index);
     // decoded_packet.use_timestamp_type = use_timestamp_type_;
+    if (!decoded_result) {
+      continue;
+    }
     if (handle_thread_count_ < 2) {
-      if (decoded_result)
-      {
-        udp_parser_->ComputeXYZI(frame_, decoded_packet);
-      }
-      // else
-      // {
-      //   printf("decoded_packets_buffer_ try_pop_front timeout\n");
-      // }
+        udp_parser_->ComputeXYZI(frame_, decoded_packet_index);
       continue;
     } else {
       nUDPCount = nUDPCount % handle_thread_count_;
       mutex_list_[nUDPCount].lock();
-      handle_thread_packet_buffer_[nUDPCount].push_back(decoded_packet);
+      handle_thread_packet_buffer_[nUDPCount].push_back(decoded_packet_index);
 
       if (handle_thread_packet_buffer_[nUDPCount].size() > handle_buffer_size_) {
         handle_thread_packet_buffer_[nUDPCount].pop_front();
@@ -508,12 +619,11 @@ void Lidar<T_Point>::HandleThread(int nThreadNum) {
 #endif
   if(!parser_thread_running_) return;
   while (running_) {
-    LidarDecodedPacket<T_Point> decoded_packet;
     mutex_list_[nThreadNum].lock();
     if (handle_thread_packet_buffer_[nThreadNum].size() > 0) {
-      decoded_packet = handle_thread_packet_buffer_[nThreadNum].front();
+      int decoded_packet_index = handle_thread_packet_buffer_[nThreadNum].front();
       handle_thread_packet_buffer_[nThreadNum].pop_front();
-      udp_parser_->ComputeXYZI(frame_, decoded_packet);
+      udp_parser_->ComputeXYZI(frame_, decoded_packet_index);
     }
     mutex_list_[nThreadNum].unlock();
   }
@@ -523,6 +633,9 @@ template <typename T_Point>
 void Lidar<T_Point>::SetThreadNum(int nThreadNum) {
   if (nThreadNum > GetAvailableCPUNum() - 2) {
     nThreadNum = GetAvailableCPUNum() - 2;
+    if (nThreadNum <= 0) {
+      nThreadNum = 1;
+    }
   }
 
   if (handle_thread_count_ == nThreadNum) {
@@ -563,6 +676,15 @@ void Lidar<T_Point>::SetThreadNum(int nThreadNum) {
       new std::thread(std::bind(&Lidar::RecieveUdpThread, this));
   parser_thread_ptr_ =
       new std::thread(std::bind(&Lidar::ParserThread, this));    
+}
+template <typename T_Point>
+void Lidar<T_Point>::ClearPacketBuffer() {
+  decoded_packets_buffer_.eff_clear();
+  if (handle_thread_count_ > 1) {
+    for (int i = 0; i < handle_thread_count_; i++) {
+      handle_thread_packet_buffer_[i].clear();
+    }
+  }
 }
 template <typename T_Point>
 void Lidar<T_Point>::SetSource(Source **source) {

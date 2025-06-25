@@ -35,18 +35,12 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef UDP4_3_PARSER_H_
 #define UDP4_3_PARSER_H_
 
-#define MAX_AZI_LEN (36000 * 256)
-#define CIRCLE_ANGLE (36000)
 #define CORRECTION_AZIMUTH_STEP (200)
 #define CORRECTION_AZIMUTH_NUM (180)
-#define FINE_AZIMUTH_UNIT (256)
-#define AZIMUTH_UNIT (25600.0f)
 #define AT128_LASER_NUM (128)
-#define FAULTMESSAGE_LENTH (99)
 #define ANGULAR_RESOLUTION (256)
 #define MARGINAL_ANGLE (7625) 
 #define ACCEPTANCE_ANGLE (200)
-#define RESOLUTION (256 * 100)
 
 #include <cmath>
 #include "general_parser.h"
@@ -55,7 +49,12 @@ namespace hesai
 {
 namespace lidar
 {
-
+#ifdef _MSC_VER
+#define PACKED
+#pragma pack(push, 1)
+#else
+#define PACKED __attribute__((packed))
+#endif
 struct PandarATCorrectionsHeader {
   uint8_t delimiter[2];
   uint8_t version[2];
@@ -64,7 +63,7 @@ struct PandarATCorrectionsHeader {
   uint8_t frame_number;
   uint8_t frame_config[8];
   uint8_t resolution;
-};
+} PACKED;
 static_assert(sizeof(PandarATCorrectionsHeader) == 16, "");
 
 struct PandarATFrameInfo {
@@ -72,8 +71,8 @@ struct PandarATFrameInfo {
   uint32_t end_frame[8];
   int32_t azimuth[AT128_LASER_NUM];
   int32_t elevation[AT128_LASER_NUM];
-  std::array<float, MAX_AZI_LEN> sin_map;
-  std::array<float, MAX_AZI_LEN> cos_map;
+  std::array<float, CIRCLE> sin_map;
+  std::array<float, CIRCLE> cos_map;
 };
 
 struct PandarATCorrections {
@@ -87,31 +86,37 @@ struct PandarATCorrections {
   int8_t elevation_offset[CIRCLE_ANGLE];
   uint8_t SHA256[32];
   PandarATFrameInfo l;  // V1.5
-  std::array<float, MAX_AZI_LEN> sin_map;
-  std::array<float, MAX_AZI_LEN> cos_map;
-  PandarATCorrections() {
-    for (int i = 0; i < MAX_AZI_LEN; ++i) {
-      sin_map[i] = float(std::sin(2 * i * M_PI / MAX_AZI_LEN));
-      cos_map[i] = float(std::cos(2 * i * M_PI / MAX_AZI_LEN));
-    }
+  PandarATCorrections()
+  : header(), l()
+  {
+    memset(start_frame, 0, sizeof(start_frame));
+    memset(end_frame, 0, sizeof(end_frame));
+    memset(azimuth, 0, sizeof(azimuth));
+    memset(elevation, 0, sizeof(elevation));
+    memset(azimuth_offset, 0, sizeof(azimuth_offset));
+    memset(elevation_offset, 0, sizeof(elevation_offset));
+    memset(SHA256, 0, sizeof(SHA256));
   }
 
-  static const int STEP3 = CORRECTION_AZIMUTH_STEP * FINE_AZIMUTH_UNIT;
+  static const int STEP3 = CORRECTION_AZIMUTH_STEP * kFineResolutionInt;
   float GetAzimuthAdjustV3(uint8_t ch, uint32_t azi) const {
     int i = int(std::floor(1.f * azi / STEP3));
-    int l = azi - i * STEP3;
-    float k = 1.f * l / STEP3;
+    int m = azi - i * STEP3;
+    float k = 1.f * m / STEP3;
     return round((1 - k) * azimuth_offset[ch * CORRECTION_AZIMUTH_NUM + i] +
                  k * azimuth_offset[ch * CORRECTION_AZIMUTH_NUM + i + 1]);
   }
   float GetElevationAdjustV3(uint8_t ch, uint32_t azi) const {
     int i = int(std::floor(1.f * azi / STEP3));
-    int l = azi - i * STEP3;
-    float k = 1.f * l / STEP3;
+    int m = azi - i * STEP3;
+    float k = 1.f * m / STEP3;
     return round((1 - k) * elevation_offset[ch * CORRECTION_AZIMUTH_NUM + i] +
                  k * elevation_offset[ch * CORRECTION_AZIMUTH_NUM + i + 1]);
   }
 };
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 // class Udp4_3Parser
 // parsers packets and computes points for PandarAT128
 // you can parser the upd or pcap packets using the DocodePacket fuction
@@ -131,26 +136,19 @@ class Udp4_3Parser : public GeneralParser<T_Point> {
   virtual void LoadCorrectionFile(std::string correction_path);
   virtual int LoadCorrectionString(char *correction_string);
 
-  virtual void HandlePacketData(uint8_t *pu8Buf, uint16_t u16Len);
-
-  // covert a origin udp packet to decoded packet, the decode function is in UdpParser module
-  // udp_packet is the origin udp packet, output is the decoded packet
-  virtual int DecodePacket(LidarDecodedPacket<T_Point> &output, const UdpPacket& udpPacket);  
-
   // covert a origin udp packet to decoded data, and pass the decoded data to a frame struct to reduce memory copy   
   virtual int DecodePacket(LidarDecodedFrame<T_Point> &frame, const UdpPacket& udpPacket); 
 
   // compute xyzi of points from decoded packet
   // param packet is the decoded packet; xyzi of points after computed is puted in frame    
-  virtual int ComputeXYZI(LidarDecodedFrame<T_Point> &frame, LidarDecodedPacket<T_Point> &packet);
+  virtual int ComputeXYZI(LidarDecodedFrame<T_Point> &frame, int packet_index);
+
+  virtual void ParserFaultMessage(UdpPacket& udp_packet, FaultMessageInfo &fault_message_info);
   PandarATCorrections m_PandarAT_corrections;
 
  protected:
   int view_mode_;
-  std::string pcap_file_;
-  std::string lidar_correction_file_;
   bool get_correction_file_;
-  // void *m_pTcpCommandClient;
 };
 }  // namespace lidar
 }  // namespace hesai

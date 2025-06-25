@@ -102,7 +102,7 @@ struct HsLidarXTV1Tail {
 
     uint32_t GetTimestamp() const { return little_to_native(m_u32Timestamp); }
 
-    int64_t GetMicroLidarTimeU64() const {
+    uint64_t GetMicroLidarTimeU64() const {
         if (m_u8UTC[0] != 0) {
             struct tm t = {0};
             t.tm_year = m_u8UTC[0] + 100;
@@ -110,7 +110,7 @@ struct HsLidarXTV1Tail {
                 t.tm_year -= 100;
             }
             t.tm_mon = m_u8UTC[1] - 1;
-            t.tm_mday = m_u8UTC[2];
+            t.tm_mday = m_u8UTC[2] + 1;
             t.tm_hour = m_u8UTC[3];
             t.tm_min = m_u8UTC[4];
             t.tm_sec = m_u8UTC[5];
@@ -120,14 +120,11 @@ struct HsLidarXTV1Tail {
   GetTimeZoneInformation(&tzi);
   long int timezone =  tzi.Bias * 60;
 #endif
-            return (mktime(&t) - timezone) * 1000000 + GetTimestamp();
+            return (mktime(&t) - timezone - 86400) * 1000000 + GetTimestamp();
         }
         else {
             uint32_t utc_time_big = *(uint32_t*)(&m_u8UTC[0] + 2);
-            int64_t unix_second = ((utc_time_big >> 24) & 0xff) |
-                    ((utc_time_big >> 8) & 0xff00) |
-                    ((utc_time_big << 8) & 0xff0000) |
-                    ((utc_time_big << 24));
+            uint64_t unix_second = big_to_native(utc_time_big);
             return unix_second * 1000000 + GetTimestamp();
         }
     }
@@ -144,86 +141,6 @@ struct HsLidarXTV1Tail {
     }
 
     uint32_t GetSeqNum() const { return little_to_native(m_u32SeqNum); }
-
-    void CalPktLoss(uint32_t &u32StartSeqNum, uint32_t &u32LastSeqNum, uint32_t &u32LossCount, 
-          uint32_t &u32StartTime, uint32_t &u32TotalLossCount, uint32_t &u32TotalStartSeqNum) const {
-      // bool print = false;
-      if (u32StartSeqNum == 0) {
-        u32LossCount = 0;
-        u32TotalLossCount = 0;
-        u32StartTime = GetMicroTickCount();
-        u32StartSeqNum = m_u32SeqNum;
-        u32LastSeqNum = m_u32SeqNum;
-        u32TotalStartSeqNum = m_u32SeqNum;
-        return;
-      }
-      if (m_u32SeqNum - u32LastSeqNum > 1) {
-        u32LossCount += (m_u32SeqNum - u32LastSeqNum - 1);
-        u32TotalLossCount += (m_u32SeqNum - u32LastSeqNum - 1);
-        // print = true;
-        // if (m_u32SeqNum - u32LastSeqNum - 1 > 1000)
-        // printf("%d,  %u, %u\n", m_u32SeqNum - u32LastSeqNum - 1, u32LastSeqNum,
-        // m_u32SeqNum);
-      }
-
-      // print log every 1s
-      if (u32LossCount != 0 && GetMicroTickCount() - u32StartTime >= 1 * 1000 * 1000) {
-        printf("pkt loss freq: %u/%u\n", u32LossCount,
-              m_u32SeqNum - u32StartSeqNum); 
-        u32LossCount = 0;
-        u32StartTime = GetMicroTickCount();
-        u32StartSeqNum = m_u32SeqNum;
-      }
-
-      u32LastSeqNum = m_u32SeqNum;
-    }
-
-  //   void CalPktLoss(uint32_t &u32StartSeqNum, uint32_t &u32LastSeqNum, uint32_t &u32LossCount, uint32_t &u32StartTime) const {
-  //   // static uint32_t u32StartSeqNum = m_u32SeqNum;
-  //   // static uint32_t u32LastSeqNum = m_u32SeqNum;
-  //   // u32StartTime = GetMicroTickCount();
-  //   // bool print = false;
-  //   if (m_u32SeqNum - u32LastSeqNum > 1) {
-  //     u32LossCount += (m_u32SeqNum - u32LastSeqNum - 1);
-  //     // print = true;
-  //     // if (m_u32SeqNum - u32LastSeqNum - 1 > 1000)
-  //     // printf("%d,  %u, %u\n", m_u32SeqNum - u32LastSeqNum - 1, u32LastSeqNum,
-  //     // m_u32SeqNum);
-  //   }
-
-  //   // print log every 10s
-  //   if (GetMicroTickCount() - u32StartTime >= 1 * 1000 * 1000) {
-  //     printf("pkt loss freq: %u/%u\n", u32LossCount,
-  //            m_u32SeqNum - u32StartSeqNum);
-  //     u32LossCount = 0;
-  //     u32StartTime = GetMicroTickCount();
-  //     u32StartSeqNum = m_u32SeqNum;
-  //   }
-
-  //   u32LastSeqNum = m_u32SeqNum;
-  // }
-
-    void CalPktLoss() const {
-      static uint32_t u32StartSeqNum = GetSeqNum();
-      static uint32_t u32LastSeqNum = GetSeqNum();
-      static uint32_t u32LossCount = 0;
-      static uint32_t u32StartTime = GetMicroTickCount();
-
-      if (GetSeqNum() - u32LastSeqNum - 1 > 0) {
-        u32LossCount += (GetSeqNum() - u32LastSeqNum - 1);
-      }
-
-      // print log every 10s
-      if (GetMicroTickCount() - u32StartTime >= 10 * 1000 * 1000) {
-        printf("pkt loss freq: %u/%u\n", u32LossCount, 
-            GetSeqNum() - u32StartSeqNum);
-        u32LossCount = 0;
-        u32StartTime = GetMicroTickCount();
-        u32StartSeqNum = GetSeqNum();
-      }
-
-      u32LastSeqNum = GetSeqNum();
-    }
 
     void Print() const {
         printf("HsLidarXTV1Tail:\n");
@@ -254,7 +171,7 @@ struct HsLidarXTV1Header {
 
     uint8_t GetLaserNum() const { return m_u8LaserNum; }
     uint8_t GetBlockNum() const { return m_u8BlockNum; }
-    double GetDistUnit() const { return m_u8DistUnit / 1000.f; }
+    float GetDistUnit() const { return m_u8DistUnit / 1000.f; }
     uint8_t GetEchoCount() const { return m_u8EchoCount; }
     bool IsFirstBlockLastReturn() const {
         return m_u8EchoCount == kFirstBlockLastReturn;
