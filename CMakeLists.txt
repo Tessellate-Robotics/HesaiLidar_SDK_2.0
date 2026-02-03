@@ -4,28 +4,6 @@ set(CMAKE_CXX_STANDARD 14)
 PROJECT(Template)
 
 set(WITH_PTCS_USE ON CACHE BOOL "Use Ptcs")
-# set(FIND_CUDA ON CACHE BOOL "Find CUDA")
-
-
-
-if(FIND_CUDA)
-    find_package(CUDA )
-if(${CUDA_FOUND})
-  	project(CommonModules LANGUAGES CXX CUDA)
-	set(CUDA_SOURCE_PROPERTY_FORMAT OBJ)
-	set(CUDA_SEPARABLE_COMPILATION ON)
-	include_directories(${CUDA_INCLUDE_DIRS})
-	set(CUDA_PROPAGATE_HOST_FLAGS OFF)
-	set(CUDA_NVCC_FLAGS -arch=sm_61;-O3;-G;-g;-std=c++14)#根据具体GPU性能更改算力参数
-	link_directories($ENV{CUDA_PATH}/lib/x64)
-else(${CUDA_FOUND})
-	MESSAGE(STATUS "cuda not found!")
-endif(${CUDA_FOUND})
-endif()
-
-
-
-
 
 cmake_policy(SET CMP0053 NEW)
 set(CMAKE_BUILD_TYPE ON)
@@ -49,15 +27,6 @@ target_include_directories(hesai_sdk_lib PUBLIC
 	algorithm
 	./
 )
-
-
-if(FIND_CUDA)
-if(${CUDA_FOUND})
-	target_compile_definitions(hesai_sdk_lib PUBLIC USE_CUDA=1)
-endif(${CUDA_FOUND})
-endif()
-
-
 
 if(BUILD_LOG_LIB_SHARED)
 	target_compile_definitions(hesai_sdk_lib PUBLIC BUILD_LOG_LIB_SHARED=1)
