@@ -28,6 +28,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef PCPASTREAMER_H_
 #define PCPASTREAMER_H_
 
+#define NOMINMAX
 #include <functional>
 #include <array>
 #include <deque>
@@ -35,7 +36,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <thread>
 #include <utility>
 #include <string>
-#include <string_view>
 #include <fstream>
 #include <memory>
 #include <queue>
@@ -127,13 +127,13 @@ struct TCP {
     uint16_t distination_port;
     uint32_t seq;
     uint32_t ack;
-    uint8_t lenres : 4;
-    uint8_t reserved1 : 4;
-    uint8_t reserved2 : 2;
-    uint8_t flag : 6;
+    uint8_t len_flags;
+    uint8_t flags;
     uint16_t win;
     uint16_t check_sum;
     uint16_t urp;
+    uint32_t getLenres() { return ((len_flags & 0xF0) >> 4) * 4; }
+    uint16_t getFlags() { return (len_flags & 0x0F) << 8 | flags; }
 };
 static_assert(sizeof(TCP) == 20);
 struct PcapTCPHeader : public PcapIPHeader {
@@ -148,11 +148,16 @@ struct PcapTCPv6Header : public PcapIPv6Header {
 static_assert(sizeof(PcapTCPv6Header) == 74);
 #pragma pack(pop)
 
-class PcapSource : public Source{
+enum ByteOrder {
+    BYTE_ORDER_NATIVE,
+    BYTE_ORDER_SWAPPED
+};
+
+class PcapSource : public Source {
 public:
     using Callback = std::function<int(const uint8_t*, uint32_t)>;
 public:
-    struct Private;
+    class Private;
 private:
     Private* _p;
     std::string pcap_path_;
@@ -162,8 +167,17 @@ private:
     PcapRecord pcap_record_;
     UDP pcap_udp_header_;
     TCP pcap_tcp_header_;
-    std::array<uint8_t, 1500> payload_;
+    std::array<uint8_t, kBufSize> payload_;
+    std::array<uint8_t, kBufSize * 4> payload_tcp_;
     int packet_interval_;
+    bool is_loop = false;
+    int begin_pos = 0;
+    ByteOrder byte_order_;
+    uint32_t time_precision_;
+    static const int kDataMaxLength = kBufSize * 100;
+    uint8_t m_receiveBuffer[kDataMaxLength]; 
+    int dataIndex = 0;
+    int dataLength = 0;
 public:
     PcapSource(std::string path, int packet_interval);
     PcapSource(const PcapSource&) = delete;
@@ -178,8 +192,7 @@ public:
     size_t fpos() const;
     void fpos(size_t);
     std::string pcap_path() const;
-    int next(UdpPacket& udpPacket, uint16_t u16Len,int flags = 0,
-                      int timeout = 1000);
+    int next();
     virtual bool Open();
     virtual void Close();
 
@@ -189,7 +202,11 @@ public:
                       int timeout = 20000);
     int distinationPort();
     void setPacketInterval(int microsecond);
-    virtual void SetSocketBufferSize(uint32_t u32BufSize) {};
+    virtual void SetSocketBufferSize(uint32_t u32BufSize) { (void)u32BufSize; };
+    virtual void SetPcapLoop(bool loop) { is_loop = loop; };
+    inline uint16_t convert_endian_16(uint16_t value);
+    inline uint32_t convert_endian_32(uint32_t value);
+    uint64_t getPacketTimestamp(const PcapRecord& record);
 };
 }  // namespace lidar
 }  // namespace hesai

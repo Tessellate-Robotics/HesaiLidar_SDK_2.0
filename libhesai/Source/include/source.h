@@ -39,6 +39,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdint.h>
 #include <string>
 #include <lidar_types.h>
+#include <logger.h>
 
 #ifdef _MSC_VER
 #include <winsock2.h>
@@ -53,7 +54,6 @@ typedef int socklen_t;
 #include <sys/types.h>
 #include <unistd.h>
 typedef unsigned int SOCKET;
-#define INVALID_SOCKET -1
 #define SOCKET_ERROR -1
 #endif
 namespace hesai
@@ -72,7 +72,10 @@ class Source {
   virtual int Send(uint8_t* u8Buf, uint16_t u16Len, int flags = 0) = 0;
   virtual int Receive(UdpPacket& udpPacket, uint16_t u16Len, int flags = 0,
                       int timeout = 1000) = 0; 
-  virtual void SetSocketBufferSize(uint32_t u32BufSize) = 0;                   
+  virtual void SetSocketBufferSize(uint32_t u32BufSize) = 0;      
+  virtual void SetReceiveStype(int type) {}
+  virtual void SetPcapLoop(bool) {}  
+  virtual void setNeedRecv(bool) {}
 };
 }  // namespace lidar
 }  // namespace hesai
