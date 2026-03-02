@@ -41,7 +41,7 @@ using namespace hesai::lidar;
 SocketSource::SocketSource(const uint16_t port, const std::string& localIp, const std::string& multicastIp) {
   client_ip_.clear();
   udp_port_ = port;
-  udp_sock_ = -1;
+  udp_sock_ = (SOCKET)(-1);
   multicast_ip_ = multicastIp;
   is_select_ = false;
   localIp_ = localIp;
@@ -55,14 +55,14 @@ void SocketSource::Close() {
   // client_ip_.clear();
   // udp_port_ = 0;
 
-  if (udp_sock_ != -1) {
+  if ((int)udp_sock_ != -1) {
 #ifdef _MSC_VER
     closesocket(udp_sock_);
     WSACleanup();
 #else
     close(udp_sock_);
 #endif
-    udp_sock_ = -1;
+    udp_sock_ = (SOCKET)(-1);
   }
 }
 
@@ -103,7 +103,7 @@ bool SocketSource::Open() {
       0) {
     LogWarning("getsockopt error=%d(%s)!!!", errno, strerror(errno));
   }
-  LogInfo("OS current udp socket recv buff size is: %d", curRcvBufSize); 
+  LogInfo("OS current udp socket recv buff size is: %d", curRcvBufSize);                 
 
   if (retVal == 0) {
 #ifdef _MSC_VER
@@ -127,7 +127,7 @@ bool SocketSource::Open() {
 #else
           close(udp_sock_);
 #endif
-          udp_sock_ = -1;
+          udp_sock_ = (SOCKET)(-1);
           LogError("SocketSource::Open(), bind failed, errno: %d", errno);
           return false;
         }
@@ -173,9 +173,9 @@ bool SocketSource::Open() {
 bool SocketSource::IsOpened() {
   bool ret = true;
 
-  if (udp_sock_ == -1) {
+  if ((int)udp_sock_ == -1) {
     ret = false;
-    LogWarning("SocketSource::IsOpened(), port %d, sock %d is not open", udp_port_,
+    LogInfo("SocketSource::IsOpened(), port %d, sock %d is not open", udp_port_,
            udp_sock_);
   }
 
@@ -194,10 +194,15 @@ int SocketSource::Send(uint8_t* u8Buf, uint16_t u16Len, int flags) {
     return len;
   }
 
-  len = sendto(udp_sock_, (char*)u8Buf, u16Len, flags, (const struct sockaddr*)&send_addr_, sizeof(send_addr_));
-  if (len == -1) {
-    LogError("SocketSource::Send, errno:%d", errno);
-    Close();
+  if (ret) {
+    sockaddr addr;
+    int val = inet_pton(AF_INET, client_ip_.c_str(), &addr);
+    if (val == 1) {
+      len = sendto(udp_sock_, (char*)u8Buf, u16Len, flags, &addr, sizeof(addr));
+      if (len == -1) LogError("SocketSource::Send, errno:%d", errno);
+    } else {
+      LogError("SocketSource::Send(), invalid IP %s", client_ip_.c_str());
+    }
   }
   return len;
 }
@@ -223,14 +228,14 @@ int SocketSource::Receive(UdpPacket& udpPacket, uint16_t u16Len, int flags,
       sockaddr_in clientAddr;
       socklen_t addrLen = sizeof(sockaddr);
       len = recvfrom(udp_sock_, (char*)udpPacket.buffer, u16Len, flags,
-                      (sockaddr*)&clientAddr, &addrLen);
-      if(len == -1) { is_select_ = true; }
-      else {
+                    (sockaddr*)&clientAddr, &addrLen);
+      if(len == -1) {is_select_ = true;}
+      else{
         udpPacket.ip = clientAddr.sin_addr.s_addr;
-        udpPacket.port = ntohs(clientAddr.sin_port);
+        udpPacket.port = htons(clientAddr.sin_port);
       }
     } else {
-      int cnt = select(udp_sock_ + 1, &rfd, NULL, NULL, &timeout);
+      int cnt = select((int)udp_sock_ + 1, &rfd, NULL, NULL, &timeout);
       if (cnt > 0) {
         is_select_ = false;
         sockaddr_in clientAddr;
@@ -238,7 +243,7 @@ int SocketSource::Receive(UdpPacket& udpPacket, uint16_t u16Len, int flags,
         len = recvfrom(udp_sock_, (char*)udpPacket.buffer, u16Len, flags,
                      (sockaddr*)&clientAddr, &addrLen);      
         udpPacket.ip = clientAddr.sin_addr.s_addr;
-        udpPacket.port = ntohs(clientAddr.sin_port);  
+        udpPacket.port = htons(clientAddr.sin_port);  
       } else if (cnt == 0) {
         len = 0;
         udpPacket.is_timeout = true;        

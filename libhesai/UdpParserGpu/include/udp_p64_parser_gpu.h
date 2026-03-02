@@ -43,6 +43,10 @@ int compute_p64_cuda(uint8_t* point_cloud_cu_, CudaPointXYZAER* points_cu_, uint
 template <typename T_Point>
 class UdpP64ParserGpu: public GeneralParserGpu<T_Point>{  
  private:
+  float* channel_azimuths_cu_;
+  float* channel_elevations_cu_;
+  PointDecodeData* point_data_cu_;
+  uint64_t* sensor_timestamp_cu_;
  public:
   UdpP64ParserGpu(uint16_t maxPacket, uint16_t maxPoint) 
      : GeneralParserGpu<T_Point>(maxPacket, maxPoint) {

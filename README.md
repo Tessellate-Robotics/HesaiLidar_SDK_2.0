@@ -1,142 +1,154 @@
 # HesaiLidar_SDK_2.0
 
-[👉 Chinese version](README_CN.md)
+## Support Lidar type
+- Pandar
+- AT128/AT128P
+- QT
+- FT120
+- XT16/XT32
+- ET25/ET30
+- OT
+- ATX
+- JT16
+- JT128、JT256 (need define JT128_256)
 
 ## 1 Check Compatibility
 
-### 1.1 Lidar Models
-
-| Pandar       | OT    | QT       | XT          | AT       | FT    | JT    |
-|:-------------|:------|:---------|:------------|:---------|:------|:------|
-| Pandar40P    | OT128 | PandarQT | PandarXT    | AT128E2X | FT120 | JT16  |
-| Pandar64     | -     | QT128C2X | PandarXT-16 | AT128P   | -     | JT128 |
-| Pandar128E3X | -     | -        | XT32M2X     | ATX      | -     | -     |
-
-### 1.2 Operating Systems
-
-- Ubuntu 16/18/20/22.04 
-- Windows 10
-
-### 1.3 Compiler Versions
-
-Ubuntu
-- Cmake 3.8.0 and above
-- G++ 7.5 and above
-
-Windows
-- Cmake 3.8.0 and above
-- MSVC 2019 and above
-
-### 1.4 Dependencies
-
-- If using point cloud visualization features, `PCL` installation is required
-- If parsing PCAP files, `libpcap` installation is required
-- If using TLS/mTLS-based Ptcs communication (supported by some lidars), `openssl` installation is required
-
-<!-- - If parsing lidar point cloud correction files, `libyaml` installation is required  // Required for parsing config.yaml files in ROS driver -->
-
-## 2 Getting Started
-
-### 2.1 Clone
-
-```bash
-git clone --recurse-submodules https://github.com/HesaiTechnology/HesaiLidar_SDK_2.0.git
+**System environment requirement:Linux**
+```
+Recommanded
+-Ubuntu 16.04
+-Ubuntu 18.04
+-Ubuntu 20.04
+-Ubuntu 22.04
+-Windows 10
 ```
 
-> On Windows systems, downloading the repository as a ZIP file is not recommended as it may cause compilation errors due to symbolic link issues.
-
-### 2.2 Compilation
-
-#### 2.2.1 Compilation Instructions for Ubuntu
-```bash
-# 0. Install dependencies
-sudo apt update && sudo apt install -y libpcl-dev libpcap-dev libyaml-cpp-dev openssl
-
-# 1. Navigate to source directory
-cd HesaiLidar_SDK_2.0
-
-# 2. Create build directory and navigate to build directory
-mkdir -p build && cd build
-
-# 3. Configure project with Cmake
-#    - Add -DCMAKE_BUILD_TYPE=Release for optimized compilation
-cmake -DCMAKE_BUILD_TYPE=Release ..
-
-# 4. Compile SDK
-#    - Use -j$(nproc) to utilize all CPU cores
-make -j$(nproc)
+**Compiler vresion requirement**
+```
+Cmake version requirement:Cmake 3.8.0 or above
+G++ version requirement:G++ 7.5 or above
+```
+**Library Dependencies: libpcl-dev + libpcap-dev + libyaml-cpp-dev
+```
+$ sudo apt install libpcl-dev libpcap-dev libyaml-cpp-dev
 ```
 
-#### 2.2.2 Compilation Instructions for Windows
-Please refer to **[How to Compile SDK on Windows](docs/compile_on_windows.md)**.
+## Clone
+```
+$ git clone https://github.com/HesaiTechnology/HesaiLidar_SDK_2.0.git
 
-#### 2.2.3 Remove dependency on openssl library (not using PTCS communication)
-Please refer to the operations in **[Compile Macro Control](docs/compile_macro_control_description.md)** to configure the macro `WITH_PTCS_USE` to be inactive.
+Note: Window is not recommended to use the compressed package, there will be symbol problems lead to compilation errors
+```
 
-## 3 Application Guide
+**Note when parsing JT128/JT256**
+```
+Need to add macro definition JT128_256, can add statement in CMakeLists.txt --- ‘add_definitions(-DJT128_256)’
+```
 
-### 3.1 Parse Lidar Data Online
-Please refer to **[How to Parse Lidar Data Online](docs/parsing_lidar_data_online.md)**.
+## Ubuntu Build
+```
+1.$ cd HesaiLidar_SDK_2.0
+2.$ mkdir build
+3.$ cd build
+4.$ cmake ..
+5.$ make
+```
 
-### 3.2 Parse PCAP File Data Offline
-Please refer to **[How to Parse PCAP File Data Offline](docs/parsing_pcap_file_data_offline.md)**.
+## window Build
+```
+Environmental preparations:
+	- Visual Studio2022	 https://visualstudio.microsoft.com/zh-hans/downloads/
+	- cmake-gui  		 https://cmake.org/download/
+	- Git 				 https://git-scm.com/
+	- OpenSSL v1.1.1	 https://slproweb.com/products/Win32OpenSSL.html
+Note: Modify 'set(OPENSSL_ROOT_DIR "C:/Program Files/OpenSSL-Win64")' to the actual path
 
-### 3.3 Point Cloud Data Visualization
-Please refer to **[How to Visualize Point Cloud Data](docs/visualization_of_point_cloud_data.md)**.
+Compile Environment Configuration:
+	1. Open CMake-GUI, select the source directory (`HesaiLidar_SDK_2.0`) and output directory (`HesaiLidar_SDK_2.0/build`)
+	2. Click `Configure`
+  	3. Click `Generate`
+	4. If it prints “Configuring done” and “Generating done” then it is OK, otherwise check for errors.
+	5. Click on `Open Project`
+	6. Right click `ALL BUILD` and click `Generate`
+	7. The corresponding executable file can be found in the `Debug/Release` folder under `Build`
+```
 
-### 3.4 Coordinate Transformation
-Please refer to **[How to Perform Coordinate Transformation](docs/coordinate_transformation.md)**.
+## Run a sample
 
-### 3.5 Save Point Cloud Data as PCD Files
-Please refer to **[How to Save Point Cloud Data as PCD Files](docs/save_point_cloud_data_as_a_pcd_file.md)**.
+Set the parameters in param in main.cc or main.cu
+```
+// Reciving data from pcap file
+```
+	param.input_param.source_type = DATA_FROM_PCAP;
+	param.input_param.pcap_path = "path/to/pcap";
+	param.input_param.correction_file_path = "/path/to/correction.csv";
+	param.input_param.firetimes_path = "path/to/firetimes.csv";
+	param.decoder_param.distance_correction_lidar_flag = false;   // Set to true when distance correction needs to be turned on
+```
+// Reciving data from connected Lidar
+```
+	param.input_param.source_type = DATA_FROM_LIDAR;
+	param.input_param.device_ip_address = '192.168.1.201'; // 192.168.1.201 is the lidar ip address
+	param.input_param.ptc_port = 9347; // 9347 is the lidar ptc port
+	param.input_param.udp_port = 2368; // 2368 is the lidar udp port
+	param.input_param.host_ip_address = "192.168.1.100"; // 192.168.1.100 is the pc ip address
+	param.input_param.multicast_ip_address = "239.0.0.1"; // 239.0.0.1 is the lidar multcast ip address, set this parameter to "" when lidar do not support muticast
+	param.input_param.correction_file_path = "/path/to/correction.csv";
+	param.decoder_param.distance_correction_lidar_flag = false;   // Set to true when distance correction needs to be turned on
+```
+// Reciving data from connected Lidar (Serial data)
+```
+	param.input_param.source_type = DATA_FROM_SERIAL;
+	param.input_param.rs485_com = "Your serial port name for receiving point cloud"; 
+  	param.input_param.rs232_com = "Your serial port name for sending cmd"; 
+	param.input_param.correction_file_path = "/path/to/correction.csv";
+	param.decoder_param.distance_correction_lidar_flag = false;   // Set to true when distance correction needs to be turned on
+```
 
-### 3.6 Use GPU Acceleration
-Please refer to **[How to Use GPU Acceleration for Performance Optimization](docs/use_gpu_acceleration.md)**.
+$ make 
+// run a cpu sample
+$ ./sample
+// run a gpu sample
+$ ./sample_gpu
+```
 
-### 3.7 Invoke SDK API Command Interface (PTC Communication)
-Please refer to **[How to Invoke SDK API Command Interface](docs/invoke_sdk_api_command_interface.md)**.
-
-### 3.8 Common Troubleshooting (WARNING)
-Please refer to **[Common Troubleshooting (WARNING)](docs/common_error_codes.md)**.
-
-### 3.9 Packet Loss Statistics
-Please refer to **[How to Perform Packet Loss Statistics](docs/packet_loss_analysis.md)**.
-
-### 3.10 Use Multi-threading to Accelerate Parsing
-Please refer to the `thread_num` configuration in **[Functional Parameter Reference](docs/parameter_introduction.md)** and configure it to a value >1
-> Note: The maximum allowed thread count is [CPU maximum cores - 2]. If configured beyond this, it will be modified to this number. Multi-threading will consume more CPU resources, please configure appropriately.
-
-### 3.11 Parse Multiple Lidar Data Online
-Navigate to [multi_test.cc](./test/multi_test.cc)
-
-For parsing parameter configuration reference, see **[How to Parse Lidar Data Online](docs/parsing_lidar_data_online.md)**
-
-> The basic principle is to use multi-threading to start two SDKs to parse data
-
-### 3.12 Filter and Parse Specified Lidar Data from PCAP or Real-time Reception Containing Multi-lidar Data
-
-Please refer to the descriptions of `device_udp_src_port` and `device_fault_port` in **[Functional Parameter Reference](docs/parameter_introduction.md)**
-
-Enable point cloud packet filtering by configuring `device_udp_src_port` (point cloud packet source port number) and `device_ip_address` (point cloud packet source IP), parsing only point cloud packets from this source IP + source port number.
-
-Enable fault message filtering by configuring `device_fault_port` (fault message source port number) and `device_ip_address` (fault message source IP), parsing only fault messages from this source IP + source port number.
-
-### 3.13 Get Specific Timestamp for Each Point in Pandar Series, OT128, XT Series, QT Series Lidars (Point Cloud Packet Timestamp + Firing Channel Time Correction)
-
-Please use the LidarPointXYZICRTT structure to declare HesaiLidarSdk, where uint64_t timeSecond is the seconds time part and uint32_t timeNanosecond is the nanoseconds time part. For example: `HesaiLidarSdk<LidarPointXYZICRTT> sample;`
-
-### 3.14 Set SDK Point Cloud Reception Timeout and PTC Timeout During Initialization
-
-1. Set SDK point cloud reception timeout
-
-    Please refer to `recv_point_cloud_timeout` in **[Functional Parameter Reference](docs/parameter_introduction.md)**. This parameter defaults to `-1`, meaning that during initialization, if no valid point cloud is received, it will block and wait indefinitely. When this parameter is configured to >= 0, the SDK will wait for a period of time before initialization fails and exits.
-
-2. Set PTC timeout
-    
-    Please refer to `ptc_connect_timeout` in **[Functional Parameter Reference](docs/parameter_introduction.md)**. This parameter defaults to `-1`, meaning that during initialization, if in `DATA_FROM_LIDAR` mode, it will block and wait for PTC connection indefinitely. When this parameter is >= 0, the SDK will wait for a period of time before reporting a connection timeout error and continuing initialization.
-
-### 3.15 Point Cloud Rearrangement Based on Horizontal and Vertical Angles
-Please refer to **[Point Cloud Rearrangement Function](docs/point_cloud_rearrangement_function.md)**
-
-## 4 Functional Parameter Reference
-Please refer to **[Functional Parameter Reference](docs/parameter_introduction.md)**.
+## Functional Parameter Description
+```
+DecoderParam :
+	1. pcap_play_synchronization: When parsing pcap, it is delayed according to the point cloud time to simulate the publish speed when parsing in real time.
+	2. frame_start_azimuth: Split-frame position of the 360-degree rotating lidar (in degrees [0-360)).
+	3. enable_packet_loss_tool: Packet loss statistics, based on sequence number.
+	4. enable_packet_timeloss_tool: Packet loss statistics, based on whether the timestamp is backed up or not, only once.
+	5. packet_timeloss_tool_continue: Whether packet loss statistics are continuously performed (based on timestamps).
+	6. use_timestamp_type: Use timestamp type (point cloud carry or local time).
+	7. fov_start and fov_end: Allowable light emission angle, outside the angle is set to 0.
+	8. distance_correction_lidar_flag: Control of optical center corrections for mechanical lidar.
+	9. xt_spot_correction: Controlling point cloud S-stratification corrections for the XT16/32 lidar.
+	10. Setting the buffer size of the system udpsocket.
+InputParam:
+	1. ptc_mode: ptc mode, some lidar support ssl encrypted communication.
+	2. source_type: udp data sources.
+	3. device_ip_address: Lidar ip, used for ptc connections, also used to filter udp data if filtering is enabled
+	4. multicast_ip_address: Enabled when lidar point cloud udp is multicast.
+	5. device_udp_src_port: On at >=1024, filter point cloud data for specified ports and ip(device_ip_address).
+	6. device_fault_port: On at >=1024, filter fault message data for specified ports and ip(device_ip_address).
+	7. udp_port: point cloud udp port.
+	8. ptc_port: lidar ptc port, used for ptc connections.
+	9. rs485_com: Point cloud port for serial reception (only for JT16).
+	10. rs232_com: Command send port for serial port reception (only for JT16).
+	11. point_cloud_baudrate: Point cloud data baud rate (only for JT16).
+	12. rs485_baudrate: OTA command baud rate (only for JT16).
+	13. rs232_baudrate: Normal command baud rate (only for JT16).
+	14. correction_save_path: Serial port to get the storage path of the angle calibration file (only for JT16).
+	15. pcap_path: Local path to pcap when pcap parses.
+	16. correction_file_path: Local path to correction file.
+	17. firetimes_path: Local path to firetimes file.
+	18. certFile、privateKeyFile、caFile: The storage path for certificates and keys when communicating with ptcs.
+	19. standby_mode: Initialization sets the lidar mode to * (on if not -1).
+	20. speed: Initialization sets the lidar speed to * (on if not -1).
+DriverParam: 
+	1. log_level: Log level to be output.
+	2. log_Target: Log output location, print and file.
+	3. log_path: File location for log output.
+```

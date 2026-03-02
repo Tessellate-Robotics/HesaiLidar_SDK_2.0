@@ -39,12 +39,48 @@ namespace lidar
 {
 #pragma pack(push, 1)
 
-inline int doubleToInt(double data) {
-  return static_cast<int>(data + 0.0625);
+union {
+  uint32_t i;
+  uint8_t c[4]; 
+} u = {0x01020304};
+    
+inline bool IsLittleEndian() { 
+  if (u.c[0] == 0x04)
+    return true; 
+  else return false;
+}  
+
+template<typename T, std::enable_if_t<std::is_integral<T>::value, int> = 0>  
+T reverseBytes(T value) {  
+    if (sizeof(T) == 1) return value;
+    T reversed = 0;  
+    for (size_t i = 0; i < sizeof(T); ++i) {  
+        reversed = (reversed << 8) | (static_cast<unsigned char>(value) & 0xFF);  
+        value >>= 8;  
+    }  
+    return reversed;  
+}  
+
+template <typename T>
+T little_to_native(T data) {
+  T out = 0;
+  if (IsLittleEndian()) {
+    out = data;
+  } else {
+    out = reverseBytes(data);
+  }
+  return out;
 }
 
-inline int floatToInt(float data) {
-  return static_cast<int>(data + 0.0625f);
+template <typename T>
+T big_to_native(T data) {
+  T out = 0;
+  if (!IsLittleEndian()) {
+    out = data;
+  } else {
+    out = reverseBytes(data);
+  }
+  return out;
 }
 
 struct HS_LIDAR_PRE_HEADER {

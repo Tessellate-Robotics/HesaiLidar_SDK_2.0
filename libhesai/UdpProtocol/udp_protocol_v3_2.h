@@ -145,7 +145,7 @@ struct HS_LIDAR_TAIL_QT_V2 {
     return (m_u8ModeFlag >> blockIndex) & 0x01;
   }
 
-  inline uint64_t GetMicroLidarTimeU64(LastUtcTime &last_utc_time) const {
+  uint64_t GetMicroLidarTimeU64() const {
     if (m_u8UTC[0] != 0) {
       if (last_utc_time.last_utc[0] == m_u8UTC[0] 
           && last_utc_time.last_utc[1] == m_u8UTC[1] 
@@ -178,8 +178,7 @@ struct HS_LIDAR_TAIL_QT_V2 {
   GetTimeZoneInformation(&tzi);
   long int timezone =  tzi.Bias * 60;
 #endif
-      last_utc_time.last_time = (mktime(&t) - timezone - 86400) * 1000000;
-      return last_utc_time.last_time + GetTimestamp();
+      return (mktime(&t) - timezone - 86400) * 1000000 + GetTimestamp();
 		}
 		else {
       uint32_t utc_time_big = *(uint32_t*)(&m_u8UTC[0] + 2);
@@ -194,7 +193,12 @@ struct HS_LIDAR_TAIL_SEQ_NUM_QT_V2 {
 
   inline uint32_t GetSeqNum() const { return little_to_native(m_u32SeqNum); }
   static uint32_t GetSeqNumSize() { return sizeof(m_u32SeqNum); }
-};
+
+  void Print() const {
+    printf("HS_LIDAR_TAIL_SEQ_NUM_QT_V2:\n");
+    printf("seqNum: %u\n", GetSeqNum());
+  }
+} PACKED;
 
 struct HS_LIDAR_TAIL_CRC_QT_V2 {
   uint32_t m_u32Crc;
@@ -222,11 +226,11 @@ struct HS_LIDAR_HEADER_QT_V2 {
   uint8_t m_u8EchoNum;
   uint8_t m_u8Status;
 
-  inline uint8_t GetLaserNum() const { return m_u8LaserNum; }
-  inline uint8_t GetBlockNum() const { return m_u8BlockNum; }
-  inline float GetDistUnit() const { return m_u8DistUnit / 1000.f; }
-  inline uint8_t GetEchoCount() const { return m_u8EchoCount; }
-  inline bool IsFirstBlockLastReturn() const {
+  uint8_t GetLaserNum() const { return m_u8LaserNum; }
+  uint8_t GetBlockNum() const { return m_u8BlockNum; }
+  float GetDistUnit() const { return m_u8DistUnit / 1000.f; }
+  uint8_t GetEchoCount() const { return m_u8EchoCount; }
+  bool IsFirstBlockLastReturn() const {
     return m_u8EchoCount == kFirstBlockLastReturn;
   }
   inline bool IsFirstBlockStrongestReturn() const {

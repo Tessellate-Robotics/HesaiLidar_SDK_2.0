@@ -35,11 +35,8 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef GENERAL_PARSER_H_
 #define GENERAL_PARSER_H_
 #define CIRCLE (36000 * 256)
-#define DEFAULT_MAX_LASER_NUM (256)
+#define MAX_LASER_NUM (512)
 #define CIRCLE_ANGLE (36000)
-#define RETURN_MODE_MULTI (0x39)
-#define RETURN_MODE_MULTI_TRIPLE (0x3D)
-#define SOMEIP_OFFSET (21)
 #ifndef M_PI
 #define M_PI (3.14159265358979323846)
 #endif
@@ -68,8 +65,6 @@ DEFINE_MEMBER_CHECKER(intensity)
 DEFINE_MEMBER_CHECKER(ring)
 DEFINE_MEMBER_CHECKER(timestamp)
 DEFINE_MEMBER_CHECKER(confidence)
-DEFINE_MEMBER_CHECKER(timeSecond)
-DEFINE_MEMBER_CHECKER(timeNanosecond)
 DEFINE_MEMBER_CHECKER(weightFactor)
 DEFINE_MEMBER_CHECKER(envLight)
 
@@ -84,6 +79,56 @@ DEFINE_SET_GET(envLight, uint8_t)
 
 
 
+template <typename T_Point>
+inline typename std::enable_if<!PANDAR_HAS_MEMBER(T_Point, confidence)>::type setConfidence(T_Point& point,
+                                                                                      const uint8_t& value)
+{
+}
+
+template <typename T_Point>
+inline typename std::enable_if<PANDAR_HAS_MEMBER(T_Point, confidence)>::type setConfidence(T_Point& point,
+                                                                                     const uint8_t& value)
+{
+  point.confidence = value;
+}
+template <typename T_Point>
+inline typename std::enable_if<!PANDAR_HAS_MEMBER(T_Point, weightFactor)>::type setWeightFactor(T_Point& point,
+                                                                                      const uint8_t& value)
+{
+}
+
+template <typename T_Point>
+inline typename std::enable_if<PANDAR_HAS_MEMBER(T_Point, weightFactor)>::type setWeightFactor(T_Point& point,
+                                                                                     const uint8_t& value)
+{
+  point.weightFactor = value;
+}
+template <typename T_Point>
+inline typename std::enable_if<!PANDAR_HAS_MEMBER(T_Point, envLight)>::type setEnvLight(T_Point& point,
+                                                                                      const uint8_t& value)
+{
+}
+
+template <typename T_Point>
+inline typename std::enable_if<PANDAR_HAS_MEMBER(T_Point, envLight)>::type setEnvLight(T_Point& point,
+                                                                                     const uint8_t& value)
+{
+  point.envLight = value;
+}
+// get command
+template <typename T_Point>
+inline typename std::enable_if<!PANDAR_HAS_MEMBER(T_Point, timestamp)>::type getTimestamp(T_Point& point,
+                                                                                      const double& value)
+{
+}
+
+template <typename T_Point>
+inline typename std::enable_if<PANDAR_HAS_MEMBER(T_Point, timestamp)>::type getTimestamp(T_Point& point,
+                                                                                      double& value)
+{
+  value = point.timestamp;
+}
+// get end
 inline float deg2Rad(float deg)
 {
     return (float)(deg * 0.01745329251994329575);
@@ -173,6 +218,50 @@ struct LastUtcTime {
   }
 };
 
+enum DistanceCorrectionType {
+  OpticalCenter,
+  GeometricCenter,
+};
+
+struct PacketSeqnumLossMessage{
+  uint32_t start_seqnum;
+  uint32_t last_seqnum;
+  uint32_t loss_count;
+  uint32_t start_time;
+  uint32_t total_loss_count;
+  uint32_t total_start_seqnum;
+  bool is_packet_loss;
+  PacketSeqnumLossMessage() {
+    start_seqnum = 0;
+    last_seqnum = 0;
+    loss_count = 0;
+    start_time = 0;
+    total_loss_count = 0;
+    total_start_seqnum = 0;
+    is_packet_loss = false;
+  }
+};
+
+struct PacketTimeLossMessage{
+  uint64_t start_timestamp;
+  uint64_t last_timestamp;
+  uint32_t timeloss_count;
+  uint32_t timeloss_start_time;
+  uint32_t total_timeloss_count;
+  uint64_t total_start_timestamp;
+  uint32_t last_total_package_count;
+  PacketTimeLossMessage() {
+    start_timestamp = 0;
+    last_timestamp = 0;
+    timeloss_count = 0;
+    timeloss_start_time = 0;
+    total_timeloss_count = 0;
+    total_start_timestamp = 0; 
+    last_total_package_count = 0;
+  }
+};
+
+
 // class GeneralParser
 // the GenneralParser class is a base class for parsering packets and computing points
 // you can parser the udp or pcap packets using the DecodePacket fuction
@@ -183,46 +272,42 @@ class GeneralParser {
   GeneralParser();
   virtual ~GeneralParser();
 
-  // load correction file, which is necessary for DecodePacket.
-  virtual void LoadCorrectionFile(const std::string& correction_path);
-  virtual int LoadCorrectionString(const char *correction_string, int len);
-  // load firetimes file
-  virtual void LoadFiretimesFile(const std::string& firetimes_path);
-  virtual int LoadFiretimesString(const char *firetimes_string, int len);
-  // load channel config file
-  virtual int LoadChannelConfigFile(const std::string channel_config_path);  
-  // load dcf config file
-  virtual int LoadDcfConfigFile(const std::string& dcf_path);
-  virtual int LoadDcfConfigString(const char *dcf_string, int len);
-  // get the pointer to the struct of the parsed correction file or firetimes file
-  virtual void* getStruct(const int type);
-  // get display 
-  virtual int getDisplay(bool **);
-  // get/set correction/firetimes file loading flag
-  bool isSetCorrectionSucc() { return get_correction_file_; }
-  bool isSetFiretimeSucc() { return get_firetime_file_; }
+  // get lidar correction file from local file,and pass to udp parser 
+  virtual void LoadCorrectionFile(std::string correction_path);
+  virtual int LoadCorrectionString(char *correction_string);
 
-  // covert a origin udp packet to decoded data, and pass the decoded data to a frame struct to reduce memory copy
-  virtual int DecodePacket(LidarDecodedFrame<T_Point> &frame, const UdpPacket& udpPacket, const int packet_index = -1); 
-  // xyzi of points after computed is puted in frame  
-  virtual int ComputeXYZI(LidarDecodedFrame<T_Point> &frame, uint32_t packet_index);
-  // parse the detailed content of the fault message
-  virtual int ParserFaultMessage(UdpPacket& udp_packet, FaultMessageInfo &fault_message_info);
-  // determine whether to frame based on azimuth
-  bool IsNeedFrameSplit(uint16_t azimuth, FrameDecodeParam &param);
-  // In ComputeXYZI, thread-safely count the number of packets that have been parsed
-  void FrameNumAdd();
-  // get/clear the number of parsed packets
-  uint32_t GetComputePacketNum() { return compute_packet_num; }
-  void SetComputePacketNumToZero() { compute_packet_num = 0; }
+  // get lidar firetime correction file from local file,and pass to udp parser 
+  virtual void LoadFiretimesFile(std::string firetimes_path);
+  virtual int LoadFiretimesString(char *firetimes_string);
+
   // compute lidar firetime correciton
-  double GetFiretimesCorrection(int laserId, double speed);
-  // compute optical center correction
+  virtual double GetFiretimesCorrection(int laserId, double speed);
+
+  /*
+    输入参数：
+    distance:  udp数据中的原始距离值
+    azimuth：  角度修正文件中的水平角
+    elevation：角度修正文件中的俯仰角
+    type:      指udp里的距离的原点，目前有两种情况，一种是udp中的距离原点在光心（optical_center),如jt,
+               一种是udp的距离原点在几何中心（geometric_center)，一般是除JT外的其他雷达
+    输出参数：
+    distance:  对于d_center为几何中心的情况，直接输出原始的distance, 对于d_center为光心的情况，把修正后相对于几何中心的距离输出
+    azimuth:   光心修正的修正量，需要加到原来的azimuth里(代替原始的角度修正文件中的水平角)
+    elevation: 光心修正后的elevation
+  */
   void GetDistanceCorrection(LidarOpticalCenter optical_center, int &azimuth, int &elevation, float &distance, DistanceCorrectionType type);
-  // compute coordinate transformation
-  void TransformPoint(float& x, float& y, float& z, const TransformParam& transform);
-  // ensure the angle is between [0-360) with 1/25600 accuracy
-  void CircleRevise(int &angle);
+  void SetLidarType(std::string lidar_type);
+  // covert a origin udp packet to decoded data, and pass the decoded data to a frame struct to reduce memory copy
+  virtual int DecodePacket(LidarDecodedFrame<T_Point> &frame, const UdpPacket& udpPacket); 
+   
+  // compute xyzi of points from decoded packet
+  // param packet is the decoded packet; xyzi of points after computed is puted in frame  
+  virtual int ComputeXYZI(LidarDecodedFrame<T_Point> &frame, int packet_index);
+  // Under thread safety, increase the points_num in the frame
+  void FrameNumAdd();
+
+  // parse the detailed content of the fault message message
+  virtual void ParserFaultMessage(UdpPacket& udp_packet, FaultMessageInfo &fault_message_info);
 
   // set frame azimuth
   virtual void SetFrameAzimuth(float frame_start_azimuth);
@@ -250,10 +335,33 @@ class GeneralParser {
   void loadDcfSuccess() { get_dcf_file_ = true; dcf_load_sequence_num_++; }
   virtual int FrameProcess(LidarDecodedFrame<T_Point> &frame);
 
+  //set enable_packet_loss_tool_
+  virtual void EnablePacketLossTool(bool enable);
+  virtual void EnablePacketTimeLossTool(bool enable);
+  virtual void PacketTimeLossToolContinue(bool enable);
+  void CalPktLoss(uint32_t PacketSeqnum);
+  void CalPktTimeLoss(uint64_t PacketTimestamp);
+  void CRCInit();
+  uint32_t CRCCalc(const uint8_t *bytes, int len, int zeros_num);
+  uint32_t GetComputePacketNum() { return compute_packet_num; }
+  void SetComputePacketNumToZero() { compute_packet_num = 0; }
+  LidarOpticalCenter GetOpticalCenter() { return optical_center; }
+  void SetOpticalCenterFlag(bool flag);
+  void SetXtSpotCorrection(bool flag) { xt_spot_correction = flag; }
 
-
+  void TransformPoint(float& x, float& y, float& z);
+  void SetTransformPara(float x, float y, float z, float roll, float pitch, float yaw);
+  void EnableUpdateMonitorInfo();
+  void DisableUpdateMonitorInfo();
+  uint16_t *GetMonitorInfo1();
+  uint16_t *GetMonitorInfo2();
+  uint16_t *GetMonitorInfo3();
+  std::vector<double> elevation_correction_{0};
+  std::vector<double> azimuth_collection_{0};
+  uint32_t total_packet_count_;
   PacketSeqnumLossMessage seqnum_loss_message_;
   PacketTimeLossMessage time_loss_message_;
+  uint32_t m_CRCTable[256];
 
  protected:
   float cos_all_angle_[CIRCLE];
@@ -268,16 +376,17 @@ class GeneralParser {
   uint32_t dcf_load_sequence_num_ = 0;
   int32_t last_azimuth_;
   int32_t last_last_azimuth_;
+  double firetime_correction_[MAX_LASER_NUM];
+  bool enable_packet_loss_tool_;
+  bool enable_packet_timeloss_tool_;
+  bool packet_timeloss_tool_continue_;
+  std::string lidar_type_;
+  Transform transform_;
+  float frame_start_azimuth_;
+  LidarOpticalCenter optical_center;
   std::atomic<uint32_t> compute_packet_num;
   int rotation_flag;
-  std::string lidar_type_;
-  uint16_t frame_start_azimuth_uint16_;
-  LidarOpticalCenter optical_center;
-  RemakeConfig default_remake_config;
-  uint32_t m_CRCTable[256];
-  bool crc_initialized;
-  LastUtcTime last_utc_time;
-  uint32_t last_max_packet_num_ = 0;
+  bool xt_spot_correction;
 };
 }
 }

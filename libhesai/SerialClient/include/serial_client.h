@@ -1,30 +1,20 @@
-/************************************************************************************************
-Copyright (C) 2023 Hesai Technology Co., Ltd.
-Copyright (C) 2023 Original Authors
-All rights reserved.
-
-All code in this repository is released under the terms of the following Modified BSD License. 
-Redistribution and use in source and binary forms, with or without modification, are permitted 
-provided that the following conditions are met:
-
-* Redistributions of source code must retain the above copyright notice, this list of conditions and 
-  the following disclaimer.
-
-* Redistributions in binary form must reproduce the above copyright notice, this list of conditions and 
-  the following disclaimer in the documentation and/or other materials provided with the distribution.
-
-* Neither the name of the copyright holder nor the names of its contributors may be used to endorse or 
-  promote products derived from this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED 
-WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A 
-PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR 
-ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT 
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS 
-INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR 
-TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF 
-ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-************************************************************************************************/
+/*
+ * Copyright (C) 2019 Hesai Tech<http://www.hesaitech.com>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+ */
 
 /*
  * File:   serial_client.h
@@ -46,8 +36,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <functional>
 #include <memory>
 #include <string.h>
-#include "inner_com.h"
-#include "byte_printer.h"
 
 namespace hesai
 {
@@ -55,13 +43,23 @@ namespace lidar
 {
 
 enum ErrorCode {
-  kInvalidEquipment  = -1,
-  kInvalidData       = -2,
-  kReadTimeout       = -3,
-  kInvalidDataHeader = -4,
-  kSerialOpenError   = -5,
-  kInPblNotUpgrade   = -6,
-  kFailedCalibration = -7,
+  kInvalidEquipment  = 1,
+  kInvalidData       = 2,
+  kFileNotExit       = 3,
+  kInvalidCmd        = 4,
+  kTimeout           = 5,
+  kExecutionError    = 6,
+  kSwipeError        = 7,
+  kDataError         = 8,
+  kPackCrcError      = 9,
+  kUndefine          = 10,
+  kPacketLoss        = 11,
+  kChecksumFailure   = 12,
+  kUnrecognisedFormat= 13,
+  kReadTimeout       = 14,
+  kLengthError       = 15,
+  kIdDiscontinuity   = 16,
+  kFailedCalibration = 11,
 };
 
 enum CmdType {
@@ -69,6 +67,7 @@ enum CmdType {
   kOta = 2,
 };
 
+typedef std::vector<uint8_t> u8Array_t;
 #pragma pack(push, 1)
 struct SerialHeader {
   uint8_t start_flag_[7];    
@@ -104,39 +103,28 @@ struct SerialHeader {
 #pragma pack(pop)
 class SerialClient {
  public:
-  using CallbackType = std::function<void(const std::string&)>; // 函数指针 std::function
   SerialClient();
   ~SerialClient();
 
   SerialClient(const SerialClient &orig) = delete;
   int QueryCommand(const uint8_t cmd, const u8Array_t &payload, u8Array_t &byteStreamOut, uint32_t timeout);
-  int RecvSpecialAckData(uint8_t &status, uint8_t &ret_code, int timeout);
   void SetSerial(Source* source_send, Source* source_recv);
+
   int ChangeUpgradeMode();
-  int ChangeMode(uint8_t mode, uint8_t reserved = 0x00);
   int GetCorrectionInfo(u8Array_t &dataOut);
   int GetSnInfo(u8Array_t &dataOut);
-  int GetLidarVersion(u8Array_t &dataOut, uint8_t type);
-  int GetLidarFaultState(u8Array_t &dataOut);
-  int GetPblVersionIdInPbl(u8Array_t &byteStreamOut);
-  int RequestUpgradeLargePackage(uint8_t type);
-  int OtaQueryCommand(const uint32_t all_num, const uint32_t num, const uint32_t len, const uint8_t *payload, uint8_t &status, uint8_t &ret_code, uint8_t type);
   static const uint16_t crc_begin = 7;
   uint32_t CRCCalc(const uint8_t *bytes, int len, int zeros_num);
-  void SetCallback(CallbackType callback) { this->log_message_handler_callback_ = callback; }
-  void ProduceLogMessage(const std::string& message); 
 
   uint32_t m_CRCTable[256];  
-  uint8_t m_now_mode = 0;
-  int UpgradeLidar(u8Array_t data, int mode, int &upgrade_progress);
  protected:
   void AddEndStreamEncode(u8Array_t &byteStreamOut, const CmdType type);
   void SerialStreamEncode(const CmdType type, u8Array_t &byteStream);
   bool SerialStreamDecode(const CmdType type, const u8Array_t &byteStreamIn, u8Array_t &byteStreamOut);
   void CRCInit();
   uint32_t GetRandom();
+  int CmdErrorCode2RetCode(uint8_t error_code);
 
-  CallbackType log_message_handler_callback_ = nullptr;
   Source* source_send_;  
   Source* source_recv_;  
 };

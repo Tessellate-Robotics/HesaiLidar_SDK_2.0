@@ -88,7 +88,7 @@ struct HsLidarXTV1Tail {
 
     inline uint32_t GetTimestamp() const { return little_to_native(m_u32Timestamp); }
 
-    uint64_t GetMicroLidarTimeU64(LastUtcTime &last_utc_time) const {
+    uint64_t GetMicroLidarTimeU64() const {
         if (m_u8UTC[0] != 0) {
             if (last_utc_time.last_utc[0] == m_u8UTC[0] 
                 && last_utc_time.last_utc[1] == m_u8UTC[1] 
@@ -121,8 +121,7 @@ struct HsLidarXTV1Tail {
             GetTimeZoneInformation(&tzi);
             long int timezone =  tzi.Bias * 60;
 #endif
-            last_utc_time.last_time = (mktime(&t) - timezone - 86400) * 1000000;
-            return last_utc_time.last_time + GetTimestamp();
+            return (mktime(&t) - timezone - 86400) * 1000000 + GetTimestamp();
         }
         else {
             uint32_t utc_time_big = *(uint32_t*)(&m_u8UTC[0] + 2);
@@ -142,8 +141,21 @@ struct HsLidarXTV1Tail {
         return m_u8UTC[index < sizeof(m_u8UTC) ? index : 0];
     }
 
-    inline uint32_t GetSeqNum() const { return little_to_native(m_u32SeqNum); }
-};
+    uint32_t GetSeqNum() const { return little_to_native(m_u32SeqNum); }
+
+    void Print() const {
+        printf("HsLidarXTV1Tail:\n");
+        printf(
+                "sts0:%d, data0:%d, sts1:%d, data1:%d, sts2:%d, data2:%d, shutDown:%d, motorSpeed:%u, "
+                "timestamp:%u, return_mode:0x%02x, factoryInfo:0x%02x, utc:%u %u "
+                "%u %u %u %u, seqNum: %u\n",
+                GetStsID0(), GetData0(), GetStsID1(), GetData1(), GetStsID2(), GetData2(), HasShutdown(),
+                GetMotorSpeed(), GetTimestamp(), GetReturnMode(), GetFactoryInfo(),
+                GetUTCData(0), GetUTCData(1), GetUTCData(2), GetUTCData(3),
+                GetUTCData(4), GetUTCData(5), GetSeqNum());
+    }
+
+} PACKED;
 
 struct HsLidarXTV1Header {
     static const uint8_t kSequenceNum = 0x01;
@@ -158,11 +170,11 @@ struct HsLidarXTV1Header {
     uint8_t m_u8EchoNum;
     uint8_t m_u8Status;
 
-    inline uint8_t GetLaserNum() const { return m_u8LaserNum; }
-    inline uint8_t GetBlockNum() const { return m_u8BlockNum; }
-    inline float GetDistUnit() const { return m_u8DistUnit / 1000.f; }
-    inline uint8_t GetEchoCount() const { return m_u8EchoCount; }
-    inline bool IsFirstBlockLastReturn() const {
+    uint8_t GetLaserNum() const { return m_u8LaserNum; }
+    uint8_t GetBlockNum() const { return m_u8BlockNum; }
+    float GetDistUnit() const { return m_u8DistUnit / 1000.f; }
+    uint8_t GetEchoCount() const { return m_u8EchoCount; }
+    bool IsFirstBlockLastReturn() const {
         return m_u8EchoCount == kFirstBlockLastReturn;
     }
     inline bool IsFirstBlockStrongestReturn() const {

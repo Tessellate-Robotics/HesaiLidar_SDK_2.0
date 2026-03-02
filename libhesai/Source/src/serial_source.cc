@@ -1,30 +1,20 @@
-/************************************************************************************************
-Copyright (C) 2023 Hesai Technology Co., Ltd.
-Copyright (C) 2023 Original Authors
-All rights reserved.
-
-All code in this repository is released under the terms of the following Modified BSD License. 
-Redistribution and use in source and binary forms, with or without modification, are permitted 
-provided that the following conditions are met:
-
-* Redistributions of source code must retain the above copyright notice, this list of conditions and 
-  the following disclaimer.
-
-* Redistributions in binary form must reproduce the above copyright notice, this list of conditions and 
-  the following disclaimer in the documentation and/or other materials provided with the distribution.
-
-* Neither the name of the copyright holder nor the names of its contributors may be used to endorse or 
-  promote products derived from this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED 
-WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A 
-PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR 
-ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT 
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS 
-INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR 
-TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF 
-ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-************************************************************************************************/
+/*
+ * Copyright (C) 2018 Hesai Tech<http://www.hesaitech.com>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+ */
 
 /*
  * File:   serial_source.cc
@@ -61,9 +51,9 @@ SerialSource::SerialSource(const std::string dev, int baudrate, int point_cloud_
 }
 
 SerialSource::~SerialSource() {
-  Close();
   delete[] serialData;
   delete[] serialData_backup;
+  Close();
 }
 
 bool SerialSource::Open() {
@@ -77,9 +67,9 @@ bool SerialSource::Open() {
     return false;
   }
   if (Open(dev_.c_str(), baudrate) == 0) {
-    if (is_need_recv_) {
-      running = true;
+    if (receiveStype == SERIAL_POINT_CLOUD_RECV) {
       runningRecvThreadPtr = new std::thread(std::bind(&SerialSource::ReceivedThread, this));
+      running = true;
     }
     return true;
   }
@@ -103,11 +93,7 @@ bool SerialSource::IsOpened() {
 int SerialSource::Open(const char *dev, int baudrate) {
   Close();
 #ifdef _MSC_VER
-  std::string devPath = dev;
-  if(devPath.length() > 4) {
-    devPath = "\\\\.\\" + devPath;
-  }
-  m_iFd = CreateFile(devPath.c_str(),  
+  m_iFd = CreateFile(dev,  
                     GENERIC_READ | GENERIC_WRITE,  
                     0,  
                     nullptr,  
@@ -186,14 +172,6 @@ int SerialSource::Open(const char *dev, int baudrate) {
 }
 
 void SerialSource::Close() {
-  if (runningRecvThreadPtr != nullptr) {
-    running = false;
-    runningRecvThreadPtr->join();
-    delete runningRecvThreadPtr;
-    runningRecvThreadPtr = nullptr;
-    dataIndex = 0;
-    dataLength = 0;
-  }
 #ifdef _MSC_VER
   if (m_iFd != INVALID_HANDLE_VALUE) {
     CloseHandle(m_iFd);  
@@ -205,6 +183,14 @@ void SerialSource::Close() {
     m_iFd = -1;
   }
 #endif
+  if (runningRecvThreadPtr != nullptr) {
+    running = false;
+    runningRecvThreadPtr->join();
+    delete runningRecvThreadPtr;
+    runningRecvThreadPtr = nullptr;
+    dataIndex = 0;
+    dataLength = 0;
+  }
 }
 
 int SerialSource::WaitRead(int32_t timeout) {

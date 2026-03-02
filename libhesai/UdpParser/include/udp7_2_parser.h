@@ -41,6 +41,36 @@ namespace hesai
 {
 namespace lidar
 {
+
+constexpr int CHANNEL_MAX = 256;
+constexpr int COLUMN_MAX = 384;
+constexpr int HASH_BYTES_LENGTH = 64;
+
+struct PandarFTCorrectionsHeader {
+    uint8_t pilot[2];
+    uint8_t version[2];
+    uint8_t reversed[2];
+    uint8_t column_number;
+    uint8_t channel_number;
+    uint8_t resolution;
+    PandarFTCorrectionsHeader() 
+    : column_number(0), channel_number(0), resolution(1)
+    {
+      memset(pilot, 0, sizeof(pilot));
+      memset(version, 0, sizeof(version));
+      memset(reversed, 0, sizeof(reversed));
+    }
+};
+struct PandarFTCorrections {
+public:
+    using ColumnFloatArray = std::array<float, COLUMN_MAX>;
+    using CorrectionMatrix = std::array<ColumnFloatArray, CHANNEL_MAX>;
+public:
+    std::array<ColumnFloatArray, CHANNEL_MAX> elevations, azimuths;
+    uint8_t major_version;
+    uint8_t min_version;
+    std::string hash_value;
+};
 // class Udp7_2Parser
 // parsers packets and computes points for PandarFT120
 template<typename T_Point>
@@ -52,15 +82,17 @@ class Udp7_2Parser : public GeneralParser<T_Point> {
   virtual int ComputeXYZI(LidarDecodedFrame<T_Point> &frame, uint32_t packet_index);
 
   // get lidar correction file from local file,and pass to udp parser 
-  virtual void LoadCorrectionFile(const std::string& correction_path);
-  virtual int LoadCorrectionString(const char *correction_string, int len);
-  int LoadCorrectionDatData(const char *data, int len);
-  int LoadCorrectionCsvData(const char *correction_string, int len);
-  virtual void LoadFiretimesFile(const std::string& firetimes_path);
-  // get the pointer to the struct of the parsed correction file or firetimes file
-  virtual void* getStruct(const int type);
-  // get display 
-  virtual int getDisplay(bool **);
+  virtual void LoadCorrectionFile(std::string correction_path);
+  virtual int LoadCorrectionString(char *correction_string);
+  int LoadCorrectionDatData(char *correction_string);
+  int LoadCorrectionCsvData(char *correction_string);
+
+  // covert a origin udp packet to decoded data, and pass the decoded data to a frame struct to reduce memory copy
+  virtual int DecodePacket(LidarDecodedFrame<T_Point> &frame, const UdpPacket& udpPacket);
+
+  // compute xyzi of points from decoded packet
+  // param packet is the decoded packet; xyzi of points after computed is puted in frame         
+  virtual int ComputeXYZI(LidarDecodedFrame<T_Point> &frame, int packet_index);
 
   // determine whether frame splitting is needed
   bool IsNeedFrameSplit(uint16_t column_id); 

@@ -35,11 +35,11 @@ set(CMAKE_BUILD_TYPE ON)
 # Add each module's entry
 set(WITH_LIDARBOARD ON CACHE BOOL "Build lidarboard code")
 set(WITH_UDPPARSER ON CACHE BOOL "Build udp parser code")
+set(WITH_PTCCLIENT ON CACHE BOOL "Build ptc client code")
 set(WITH_SERIALCLIENT ON CACHE BOOL "Build serial client code")
-set(WITH_PTCCLIENT ON CACHE BOOL "Build ptcClient code")
-if (WITH_LIDARBOARD AND WITH_UDPPARSER AND WITH_SERIALCLIENT AND WITH_PTCCLIENT)
-    set(WITH_LIDARLIB ON CACHE BOOL "Build lidar code")
-endif()
+set(WITH_PTCPARSER ON CACHE BOOL "Build ptc parser code")
+set(WITH_CONTAINER ON CACHE BOOL "Build container code")
+set(WITH_LOG ON CACHE BOOL "Build log code")
 
 
 # 设置生成平台为 x64
@@ -65,6 +65,23 @@ find_package(Threads REQUIRED)
 
 include_directories(
     ./
+    include
+    Lidar
+    UdpProtocol
+    Server
+    UdpParser
+    UdpParser/include
+    UdpParser/src
+    PtcParser
+    PtcParser/include
+    PtcParser/src
+    Source/include
+    Container/include
+    Container/src
+    PtcClient/include
+    SerialClient/include
+    Logger/include
+    ${OPENSSL_INCLUDE_DIR}
 )
 
 # Make each module an 'OBJECT' library, can be refered to by get_link_libraries
@@ -144,6 +161,14 @@ endif()
     endif(WITH_PTCS_USE)
     
 endif(WITH_PTCCLIENT)
+    add_library(serialClient_lib 
+    SerialClient/src/serial_client.cc
+    )
+    set_target_properties(serialClient_lib 
+        PROPERTIES CXX_STANDARD_REQUIRED TRUE CXX_STANDARD 14)
+if (WITH_SERIALCLIENT)
+
+endif(WITH_SERIALCLIENT)
 
 if(WITH_LIDARBOARD)
     add_library(source_lib 
@@ -155,7 +180,10 @@ if(WITH_LIDARBOARD)
         Source/src/tcp_source.cc
         )
     target_link_libraries(source_lib
-        platutils_lib)
+        platutils_lib
+        container_lib
+        ptcClient_lib
+        serialClient_lib)
     set_target_properties(source_lib
         PROPERTIES CXX_STANDARD_REQUIRED TRUE CXX_STANDARD 14)
     target_include_directories(source_lib PUBLIC   

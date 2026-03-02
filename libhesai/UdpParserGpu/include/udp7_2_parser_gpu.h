@@ -41,7 +41,11 @@ int compute_7_2_cuda(uint8_t* point_cloud_cu_, CudaPointXYZAER* points_cu_, uint
 template <typename T_Point>
 class Udp7_2ParserGpu: public GeneralParserGpu<T_Point>{
  private:
-  const FT::PandarFTCorrections* FT_correction_ptr;
+  float* channel_azimuths_cu_;
+  float* channel_elevations_cu_;
+  PointDecodeData* point_data_cu_;
+  uint64_t* sensor_timestamp_cu_;
+
  public:
   Udp7_2ParserGpu(uint16_t maxPacket, uint16_t maxPoint) 
      : GeneralParserGpu<T_Point>(maxPacket, maxPoint) {

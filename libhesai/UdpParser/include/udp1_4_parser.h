@@ -41,6 +41,9 @@ namespace hesai
 {
 namespace lidar
 {
+#define STR_PANDARN "PanadarN"
+#define STR_OT128   "OT128"
+#define STR_JT128_256 "JT128_256"
 
 // class Udp1_4Parser
 // parsers packets and computes points for PandarN E3X、OT128
@@ -50,19 +53,29 @@ class Udp1_4Parser : public GeneralParser<T_Point> {
   Udp1_4Parser(std::string);
   virtual ~Udp1_4Parser();
 
-  virtual int DecodePacket(LidarDecodedFrame<T_Point> &frame, const UdpPacket& udpPacket, const int packet_index = -1);    
-  virtual int ComputeXYZI(LidarDecodedFrame<T_Point> &frame, uint32_t packet_index);
+  // covert a origin udp packet to decoded data, and pass the decoded data to a frame struct to reduce memory copy
+  virtual int DecodePacket(LidarDecodedFrame<T_Point> &frame, const UdpPacket& udpPacket);
 
-  virtual void LoadFiretimesFile(const std::string& firetimes_path);
-  virtual int LoadCorrectionString(const char *correction_string, int len);
+  // compute xyzi of points from decoded packet
+  // param packet is the decoded packet; xyzi of points after computed is puted in frame      
+  virtual int ComputeXYZI(LidarDecodedFrame<T_Point> &frame, int packet_index);
+
+  // get lidar firetime correction file from local file,and pass to udp parser 
+  virtual void LoadFiretimesFile(std::string firetimes_path);
+  virtual int LoadCorrectionString(char *correction_string);
+
+  using GeneralParser<T_Point>::GetFiretimesCorrection;
   // compute lidar firetime correciton
   double GetFiretimesCorrection(int laserId, double speed, uint8_t optMode, uint8_t angleState, float dist);
-  // get the pointer to the struct of the parsed correction file or firetimes file
-  virtual void* getStruct(const int type);
-  virtual void setFrameRightMemorySpace(LidarDecodedFrame<T_Point> &frame);
+  
+  // determine whether frame splitting is needed
+  bool IsNeedFrameSplit(uint16_t azimuth); 
+
  private:
-  int GetFiretimes(int laserId, uint8_t optMode, uint8_t angleState, float dist);
-  pandarN::FiretimesPandarN firetimes;
+  static const int kLaserNum = 128;
+  double section_distance;
+  std::string lidar_type_;
+  std::array<FiretimeSectionValues, kLaserNum> firetime_section_values;
 };
 }  // namespace lidar
 }  // namespace hesai

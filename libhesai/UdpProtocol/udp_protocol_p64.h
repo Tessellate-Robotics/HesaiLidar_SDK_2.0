@@ -50,11 +50,20 @@ struct HS_LIDAR_L64_Header {
   uint8_t m_u8Reserved0;
   uint8_t m_u8Reserved1;
 
-  inline uint8_t GetLaserNum() const { return m_u8LaserNum; }
-  inline uint8_t GetBlockNum() const { return m_u8BlockNum; }
-  inline float GetDistUnit() const { return m_u8DistUnit / 1000.f; }
-  inline uint8_t GetReturnType() const { return m_u8ReturnType; }
-};
+  HS_LIDAR_L64_Header()
+      : m_u16Sob(0),
+        m_u8LaserNum(0),
+        m_u8BlockNum(0),
+        m_u8ReturnType(0),
+        m_u8DistUnit(0),
+        m_u8Reserved0(0),
+        m_u8Reserved1(0) {}
+
+  uint8_t GetLaserNum() const { return m_u8LaserNum; }
+  uint8_t GetBlockNum() const { return m_u8BlockNum; }
+  float GetDistUnit() const { return m_u8DistUnit / 1000.f; }
+  uint8_t GetReturnType() const { return m_u8ReturnType; }
+} PACKED;
 
 struct HS_LIDAR_BODY_CHN_UNIT_L64 {
   uint16_t m_u16Distance;
@@ -109,24 +118,31 @@ struct HS_LIDAR_TAIL_L64 {
     last_utc_time.last_utc[4] = m_u8UTC[4];
     last_utc_time.last_utc[5] = m_u8UTC[5];
 
-    struct tm t = {0};
-    t.tm_year = m_u8UTC[0];
-    if (t.tm_year < 70) {
-        t.tm_year += 100;
-    }
-    t.tm_mon = m_u8UTC[1] - 1;
-    t.tm_mday = m_u8UTC[2] + 1;
-    t.tm_hour = m_u8UTC[3];
-    t.tm_min = m_u8UTC[4];
-    t.tm_sec = m_u8UTC[5];
-    t.tm_isdst = 0;
+  uint64_t GetMicroLidarTimeU64() const {
+      if (m_u8UTC[0] != 0) {
+          struct tm t = {0};
+          t.tm_year = m_u8UTC[0] + 100;
+          if (t.tm_year >= 200) {
+              t.tm_year -= 100;
+          }
+          t.tm_mon = m_u8UTC[1] - 1;
+          t.tm_mday = m_u8UTC[2] + 1;
+          t.tm_hour = m_u8UTC[3];
+          t.tm_min = m_u8UTC[4];
+          t.tm_sec = m_u8UTC[5];
+          t.tm_isdst = 0;
 #ifdef _MSC_VER
     TIME_ZONE_INFORMATION tzi;
     GetTimeZoneInformation(&tzi);
     long int timezone =  tzi.Bias * 60;
 #endif
-    last_utc_time.last_time = (mktime(&t) - timezone - 86400) * 1000000;
-    return last_utc_time.last_time + GetTimestamp();
+          return (mktime(&t) - timezone - 86400) * 1000000 + GetTimestamp();
+      }
+      else {
+          uint32_t utc_time_big = *(uint32_t*)(&m_u8UTC[0] + 2);
+          uint64_t unix_second = big_to_native(utc_time_big);
+          return unix_second * 1000000 + GetTimestamp();
+      }
   }
 
 };

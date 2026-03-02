@@ -43,25 +43,25 @@ static const int kTimeStrLen = 1000;
 #ifdef _MSC_VER
 void SetThreadPriorityWin(int priority) {
   auto handle = GetCurrentThread();
-  // LogInfo("set thread %lu, priority %d",std::this_thread::get_id(),
-  //       priority);
+  LogInfo("set thread %lu, priority %d",std::this_thread::get_id(),
+        priority);
   SetThreadPriority(handle, priority);
   int prior = GetThreadPriority(handle);
-  // LogInfo("get thead %lu, priority %d", std::this_thread::get_id(),
-  //       prior);
+  LogInfo("get thead %lu, priority %d", std::this_thread::get_id(),
+        prior);
 }
 #else
 void SetThreadPriority(int policy, int priority) {
-  // LogInfo("set thread %lu, tid %ld, policy %d and priority %d", pthread_self(),
-  //        gettid(), policy, priority);
+  LogInfo("set thread %lu, tid %ld, policy %d and priority %d", pthread_self(),
+         gettid(), policy, priority);
   sched_param param;
   param.sched_priority = priority;
   pthread_setschedparam(pthread_self(), policy, &param);
 
   int ret_policy;
   pthread_getschedparam(pthread_self(), &ret_policy, &param);
-  // LogInfo("get thead %lu, tid %ld, policy %d and priority %d", pthread_self(),
-  //        gettid(), ret_policy, param.sched_priority);
+  LogInfo("get thead %lu, tid %ld, policy %d and priority %d", pthread_self(),
+         gettid(), ret_policy, param.sched_priority);
 }
 #endif
 
@@ -152,6 +152,51 @@ int GetAvailableCPUNum() {
 #else
   return sysconf(_SC_NPROCESSORS_ONLN); 
 #endif 
+}
+
+int GetAnglesFromFile(
+    const std::string& sFile,
+    std::map<int, std::pair<float, float>>& mapAngleMetaData) {
+  FILE* pFile = fopen(sFile.c_str(), "r");
+
+  if (NULL == pFile) {
+    LogError("cannot open the angle file, please check: %s", sFile.c_str());
+    return 1;
+  }
+
+  char sContent[255] = {0};
+  if (fgets(sContent, 255, pFile) == NULL) { // skip first line
+    LogError("Failed to read from file");
+    fclose(pFile);
+    return 1;
+  } 
+
+  while (!feof(pFile)) {
+    memset(sContent, 0, 255);
+    if (fgets(sContent, 255, pFile) == NULL) {
+      LogError("Failed to read from file");
+      fclose(pFile);
+      return 1;
+    }
+
+    if (strlen(sContent) < strlen(" , , ")) {
+      break;
+    }
+
+    int iChannelId;
+    float fPitch;
+    float fAzimuth;
+
+    sscanf(sContent, "%d,%f,%f", &iChannelId, &fPitch, &fAzimuth);
+
+    std::pair<float, float> pairAngleData = std::make_pair(fPitch, fAzimuth);
+    mapAngleMetaData.insert(std::map<int, std::pair<float, float>>::value_type(
+        iChannelId, pairAngleData));
+  }
+
+  fclose(pFile);
+  pFile = NULL;
+  return 0;
 }
 
 // 2004-05-03T17:30:08+08:00

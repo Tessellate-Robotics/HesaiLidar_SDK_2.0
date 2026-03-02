@@ -120,7 +120,7 @@ struct HS_LIDAR_TAIL_FT_V2 {
 
   uint32_t GetSeqNum() const { return little_to_native(sequence_num); }
 
-  uint64_t GetMicroLidarTimeU64(LastUtcTime &last_utc_time) const {
+  uint64_t GetMicroLidarTimeU64() const {
     if (utc[0] != 0) {
       if (last_utc_time.last_utc[0] == utc[0]
           && last_utc_time.last_utc[1] == utc[1]
@@ -153,8 +153,7 @@ struct HS_LIDAR_TAIL_FT_V2 {
   GetTimeZoneInformation(&tzi);
   long int timezone =  tzi.Bias * 60;
 #endif
-      last_utc_time.last_time = (mktime(&t) - timezone - 86400) * 1000000;
-      return last_utc_time.last_time + GetTimestamp();
+      return (mktime(&t) - timezone - 86400) * 1000000 + GetTimestamp();
 		}
 		else {
       uint32_t utc_time_big = *(uint32_t*)(&utc[0] + 2);

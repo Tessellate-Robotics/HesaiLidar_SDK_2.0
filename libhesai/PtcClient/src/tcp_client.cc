@@ -84,7 +84,7 @@ void TcpClient::Close() {
   }
 }
 
-bool TcpClient::TryOpen(uint16_t host_port, std::string IPAddr, uint16_t u16Port, bool bAutoReceive,
+bool TcpClient::TryOpen(std::string IPAddr, uint16_t u16Port, bool bAutoReceive,
           const char* cert, const char* private_key, const char* ca, uint32_t timeout) {
   (void)bAutoReceive;
   (void)cert;          
@@ -107,7 +107,6 @@ bool TcpClient::TryOpen(uint16_t host_port, std::string IPAddr, uint16_t u16Port
   }
 #endif  
   struct sockaddr_in serverAddr;
-  struct sockaddr_in localAddr;
 
   m_tcpSock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 
@@ -116,17 +115,6 @@ bool TcpClient::TryOpen(uint16_t host_port, std::string IPAddr, uint16_t u16Port
     WSACleanup();
 #endif
     return false;
-  }
-
-  if (host_port > 0) {
-    memset(&localAddr, 0, sizeof(localAddr));
-    localAddr.sin_family = AF_INET;
-    localAddr.sin_addr.s_addr = htonl(INADDR_ANY); 
-    localAddr.sin_port = htons(host_port);
-  
-    if (bind(m_tcpSock, (struct sockaddr*)&localAddr, sizeof(localAddr)) < 0) {
-      LogError("Failed to bind local port, system will auto assign one");
-    }
   }
 
   memset(&serverAddr, 0, sizeof(serverAddr));
@@ -311,26 +299,15 @@ int TcpClient::Receive(uint8_t *u8Buf, uint32_t u32Len, int flags) {
     len = recv(m_tcpSock, (char*)u8Buf, u32Len, flags);
     if (len == 0 || (len == -1 && errno != EINTR && errno != EAGAIN &&
                      errno != EWOULDBLOCK)) {
-      if (flags != 0xFF) {
-        LogError("Receive, len: %d errno: %d", len, errno);
-        Close();
-      }
-    }
-    if (flags == 0xFF) {
-#ifdef _MSC_VER  
-      u_long mode = 0; // 0为阻塞模式  
-      ioctlsocket(m_tcpSock, FIONBIO, &mode);  
-#else  
-      flags = fcntl(m_tcpSock, F_GETFL, 0); 
-      fcntl(m_tcpSock, F_SETFL, flags & ~O_NONBLOCK); 
-#endif 
+      LogError("Receive, len: %d errno: %d", len, errno);
+      Close();
     }
   }
 
   int delta = GetMicroTickCount() - tick;
 
   if (delta >= 1000000) {
-    LogDebug("Receive execu: %dus", delta);
+    LogWarning("Receive execu: %dus", delta);
   }
 
   return len;

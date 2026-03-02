@@ -35,12 +35,88 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef UDP4_3_PARSER_H_
 #define UDP4_3_PARSER_H_
 
+#define CORRECTION_AZIMUTH_STEP (200)
+#define CORRECTION_AZIMUTH_NUM (180)
+#define AT128_LASER_NUM (128)
+#define ANGULAR_RESOLUTION (256)
+#define MARGINAL_ANGLE (7625) 
+#define ACCEPTANCE_ANGLE (200)
+
+#include <cmath>
 #include "general_parser.h"
 #include "udp_protocol_v4_3.h"
 namespace hesai
 {
 namespace lidar
 {
+#ifdef _MSC_VER
+#define PACKED
+#pragma pack(push, 1)
+#else
+#define PACKED __attribute__((packed))
+#endif
+struct PandarATCorrectionsHeader {
+  uint8_t delimiter[2];
+  uint8_t version[2];
+  uint8_t channel_number;
+  uint8_t mirror_number;
+  uint8_t frame_number;
+  uint8_t frame_config[8];
+  uint8_t resolution;
+} PACKED;
+static_assert(sizeof(PandarATCorrectionsHeader) == 16, "");
+
+struct PandarATFrameInfo {
+  uint32_t start_frame[8];
+  uint32_t end_frame[8];
+  int32_t azimuth[AT128_LASER_NUM];
+  int32_t elevation[AT128_LASER_NUM];
+  std::array<float, CIRCLE> sin_map;
+  std::array<float, CIRCLE> cos_map;
+};
+
+struct PandarATCorrections {
+ public:
+  PandarATCorrectionsHeader header;
+  uint16_t start_frame[8];
+  uint16_t end_frame[8];
+  int16_t azimuth[AT128_LASER_NUM];
+  int16_t elevation[AT128_LASER_NUM];
+  int8_t azimuth_offset[CIRCLE_ANGLE];
+  int8_t elevation_offset[CIRCLE_ANGLE];
+  uint8_t SHA256[32];
+  PandarATFrameInfo l;  // V1.5
+  PandarATCorrections()
+  : header(), l()
+  {
+    memset(start_frame, 0, sizeof(start_frame));
+    memset(end_frame, 0, sizeof(end_frame));
+    memset(azimuth, 0, sizeof(azimuth));
+    memset(elevation, 0, sizeof(elevation));
+    memset(azimuth_offset, 0, sizeof(azimuth_offset));
+    memset(elevation_offset, 0, sizeof(elevation_offset));
+    memset(SHA256, 0, sizeof(SHA256));
+  }
+
+  static const int STEP3 = CORRECTION_AZIMUTH_STEP * kFineResolutionInt;
+  float GetAzimuthAdjustV3(uint8_t ch, uint32_t azi) const {
+    int i = int(std::floor(1.f * azi / STEP3));
+    int m = azi - i * STEP3;
+    float k = 1.f * m / STEP3;
+    return round((1 - k) * azimuth_offset[ch * CORRECTION_AZIMUTH_NUM + i] +
+                 k * azimuth_offset[ch * CORRECTION_AZIMUTH_NUM + i + 1]);
+  }
+  float GetElevationAdjustV3(uint8_t ch, uint32_t azi) const {
+    int i = int(std::floor(1.f * azi / STEP3));
+    int m = azi - i * STEP3;
+    float k = 1.f * m / STEP3;
+    return round((1 - k) * elevation_offset[ch * CORRECTION_AZIMUTH_NUM + i] +
+                 k * elevation_offset[ch * CORRECTION_AZIMUTH_NUM + i + 1]);
+  }
+};
+#ifdef _MSC_VER
+#pragma pack(pop)
+#endif
 // class Udp4_3Parser
 // parsers packets and computes points for PandarAT128
 // you can parser the upd or pcap packets using the DocodePacket fuction
@@ -63,13 +139,27 @@ class Udp4_3Parser : public GeneralParser<T_Point> {
   virtual int getDisplay(bool **);
 
   // determine whether frame splitting is needed
-  bool IsNeedFrameSplit(uint16_t azimuth);  
+  bool IsNeedFrameSplit(uint16_t azimuth, int field);  
+
+  // get lidar correction file from local file,and pass to udp parser                                 
+  virtual void LoadCorrectionFile(std::string correction_path);
+  virtual int LoadCorrectionString(char *correction_string);
+
+  // covert a origin udp packet to decoded data, and pass the decoded data to a frame struct to reduce memory copy   
+  virtual int DecodePacket(LidarDecodedFrame<T_Point> &frame, const UdpPacket& udpPacket); 
+
+  // compute xyzi of points from decoded packet
+  // param packet is the decoded packet; xyzi of points after computed is puted in frame    
+  virtual int ComputeXYZI(LidarDecodedFrame<T_Point> &frame, int packet_index);
+
+  virtual void ParserFaultMessage(UdpPacket& udp_packet, FaultMessageInfo &fault_message_info);
+  PandarATCorrections m_PandarAT_corrections;
 
   virtual int ParserFaultMessage(UdpPacket& udp_packet, FaultMessageInfo &fault_message_info);
   virtual void setFrameRightMemorySpace(LidarDecodedFrame<T_Point> &frame);
  protected:
-  AT::ATCorrections AT_corrections;
-  bool use_angle_;
+  int view_mode_;
+  bool get_correction_file_;
 };
 }  // namespace lidar
 }  // namespace hesai

@@ -46,8 +46,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "driver_param.h"
 #include "serial_source.h"
 #include "serial_client.h"
-#include "tcp_source.h"
-#include "pcap_saver.h"
 #ifndef _MSC_VER
 #include <endian.h>
 #include <semaphore.h>
@@ -67,7 +65,6 @@ enum LidarInitFinishStatus {
   PtcInitFinish = 1,
   PointCloudParse = 2,
   AllInitFinish = 3,
-  FailInit = 4,
 
   TotalStatus
 };
@@ -89,6 +86,7 @@ public:
   // init lidar with param. init logger, udp parser, source, ptc client, start receive/parser thread
   int Init(const DriverParam& param);
   void InitSetPtc(const DriverParam param);
+  int GetGeneralParser(GeneralParser<T_Point> **parser);
   // set lidar type for Lidar object and udp parser, udp parser will initialize the corresponding subclass
   int SetLidarType(std::string lidar_type);
   // get one packet from origin_packets_buffer_, 
@@ -121,29 +119,40 @@ public:
   int SaveCorrectionFile(const std::string& correction_save_path);
   // get lidar correction file from ptc,and pass to udp parser
   int LoadCorrectionForUdpParser();
-  // load firetimes file from ptc
-  int LoadFiretimesForUdpParser();
   int LoadCorrectionForSerialParser(std::string correction_save_path);
-  // load correction file from Ros bag 
-  int LoadCorrectionFromROSbag();
   // get lidar correction file from local file,and pass to udp parser 
-  void LoadCorrectionFile(const std::string& correction_path); 
-  int LoadCorrectionString(const char *correction_string, int len);
+  void LoadCorrectionFile(std::string correction_path); 
+  int LoadCorrectionString(char *correction_string);
   // get lidar firetime correction file from local file,and pass to udp parser     
-  void LoadFiretimesFile(const std::string& firetimes_path);
+  void LoadFiretimesFile(std::string firetimes_path);
+  void SetUdpParser(UdpParser<T_Point> *udp_parser);
+  UdpParser<T_Point> *GetUdpParser();
+  void EnableRecordPcap(bool bRecord);
   // set the parser thread number
   void SetThreadNum(int thread_num);
   void ClearPacketBuffer();
+  void SetSource(Source **source);
+  std::string GetLidarType();
   // get pcap status
   bool IsPlayEnded();
-  // get init_finish state
-  bool GetInitFinish(LidarInitFinishStatus type) { return init_finish_[type]; }
-  void SetAllFinishReady() { init_finish_[AllInitFinish] = true; }
-  
-  void SetSource(Source **source);
-  UdpParser<T_Point> *GetUdpParser();
-  GeneralParser<T_Point> *GetGeneralParser();
-  std::string GetLidarType();
+  // set standby mode
+  int SetStandbyMode(PtcClient *Ptc_client, int standby_mode);
+  // set spin speed
+  int SetSpinSpeed(PtcClient *Ptc_client, int speed);
+  // load correction file from Ros bag 
+  int LoadCorrectionFromROSbag();
+  UdpParser<T_Point> *udp_parser_;
+  Source *source_;
+  Source *source_rs232_;
+  PtcClient *ptc_client_;
+  SerialClient* serial_client_;
+  LidarDecodedFrame<T_Point> frame_;
+  BlockingRing<UdpPacket, kPacketBufferSize> origin_packets_buffer_;
+  uint16_t use_timestamp_type_ = 0;
+  int fov_start_ = -1;
+  int fov_end_ = -1;
+  u8Array_t correction_string_;
+  bool init_finish_[TotalStatus];           // 0: 基本初始化完成， 1：ptc初始化完成， 2：角度校准文件加载完成， 3：全部初始化完成
 
   std::shared_ptr<PtcClient> ptc_client_;
   LidarDecodedFrame<T_Point> frame_;
@@ -172,17 +181,17 @@ private:
   void ParserThread();
   /* this function will parser decoded packet data  in handle_thread_packet_buffer_ into pointxyzi info  */
   void HandleThread(int thread_num);
+  BlockingRing<int, kPacketBufferSize> decoded_packets_buffer_;
+
   // this variable is the exit condition of udp/parser thread
   bool running_;
   // this variable decide whether Receive_packet_thread will run
   bool udp_thread_running_;
   // this variable decide whether parser_thread will run
   bool parser_thread_running_;
-  bool init_running;
-  std::shared_ptr<std::thread> Receive_packet_thread_ptr_;
-  std::shared_ptr<std::thread> Receive_packet_thread_ptr_fault_message_;
-  std::shared_ptr<std::thread> parser_thread_ptr_;
-  std::shared_ptr<std::thread> init_set_ptc_ptr_;
+  std::thread *recieve_packet_thread_ptr_;
+  std::thread *parser_thread_ptr_;
+  std::thread *init_set_ptc_ptr_;
   std::mutex *mutex_list_;
   std::vector<std::list<int>> handle_thread_packet_buffer_;
   std::vector<std::thread *> handle_thread_vec_;

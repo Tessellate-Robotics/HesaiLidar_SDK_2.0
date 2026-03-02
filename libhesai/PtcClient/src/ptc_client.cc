@@ -39,7 +39,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <chrono>
 #include <thread>
 #include <iostream>
-#include <cstring>
 #ifdef _MSC_VER
 #ifndef MSG_DONTWAIT
 #define MSG_DONTWAIT (0x40)
@@ -61,7 +60,6 @@ PtcClient::~PtcClient() {
     delete open_thread_ptr_;
     open_thread_ptr_ = nullptr;
   } 
-  ret_code_ = 0;
 }
 
 PtcClient::PtcClient(std::string ip
@@ -78,17 +76,14 @@ PtcClient::PtcClient(std::string ip
                     , uint16_t u16HostPort)
   : client_mode_(client_mode)
   , ptc_version_(ptc_version) {
-  InitOpen = true;
   lidar_ip_ = ip;
   tcp_port_ =  u16TcpPort;
-  host_port_ = u16HostPort;
   auto_receive_ = bAutoReceive;
   cert_  = cert;
   private_key_ = private_key;
   ca_ = ca;
   recv_timeout_ms_ = u32RecvTimeoutMs;
   send_timeout_ms_ = u32SendTimeoutMs;
-  ptc_connect_timeout_ = ptc_connect_timeout;
 
   open_thread_ptr_ = new std::thread(std::bind(&PtcClient::TryOpen, this));
   // init ptc parser
@@ -98,79 +93,22 @@ PtcClient::PtcClient(std::string ip
 }
 
 void PtcClient::TryOpen() {
-  auto start_time = std::chrono::high_resolution_clock::now();
-  if (lidar_ip_ == "") {
-    LogWarning("PtcClient::PtcClient() lidar_ip_ is empty, wait recv could point to get lidar ip");
-    while (InitOpen && lidar_ip_ == "") {
-      auto end_time = std::chrono::high_resolution_clock::now();
-      std::chrono::duration<double> elapsed_seconds = end_time - start_time;
-      if (ptc_connect_timeout_ >= 0 && 
-            elapsed_seconds.count() > ptc_connect_timeout_) {
-        LogWarning("ptc connect : get lidar ip timeout");
-        return;
-      }
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
-    if (!InitOpen) {
-      LogWarning("ptc connect exit 1");
-      return;
-    }
-  }
   LogInfo("PtcClient::PtcClient() %s %u", lidar_ip_.c_str(), tcp_port_);
   if(client_mode_ == PtcMode::tcp) {
     client_ = std::make_shared<TcpClient>();
-    while (InitOpen && !client_->TryOpen(host_port_, lidar_ip_, tcp_port_, auto_receive_)) {
-      auto end_time = std::chrono::high_resolution_clock::now();
-      std::chrono::duration<double> elapsed_seconds = end_time - start_time;
-      if (ptc_connect_timeout_ >= 0 && 
-           elapsed_seconds.count() > ptc_connect_timeout_) break;
+    while (InitOpen && !client_->TryOpen(lidar_ip_, tcp_port_, auto_receive_)) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
   } else if(client_mode_ == PtcMode::tcp_ssl) {
-#ifdef WITH_PTCS_USE
     client_ = std::make_shared<TcpSslClient>();
-    while(InitOpen && !client_->TryOpen(host_port_, lidar_ip_, tcp_port_, auto_receive_, cert_.c_str(), private_key_.c_str(), ca_.c_str())) {
-      auto end_time = std::chrono::high_resolution_clock::now();
-      std::chrono::duration<double> elapsed_seconds = end_time - start_time;
-      if (ptc_connect_timeout_ >= 0 && 
-           elapsed_seconds.count() > ptc_connect_timeout_) break;
+    while(InitOpen && !client_->TryOpen(lidar_ip_, tcp_port_, auto_receive_, cert_, private_key_, ca_)) {
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
-#else
-    LogFatal("The current compilation does not support ssl mode!!!");
-#endif
-  }
-  if (!InitOpen || client_ == nullptr || !client_->IsOpened()) {
-    LogWarning("ptc connect exit 2");
-    return;
   }
   if (recv_timeout_ms_ != 0 && send_timeout_ms_ != 0) {
     LogInfo("u32RecvTimeoutMs %u", recv_timeout_ms_);
     LogInfo("u32SendTimeoutMs %u", send_timeout_ms_);    
     client_->SetTimeout(recv_timeout_ms_, send_timeout_ms_);
-  }
-  LogInfo("ptc connect success");
-}
-
-bool PtcClient::IsOpen() { 
-  if (client_ != nullptr) 
-    return client_->IsOpened(); 
-  else 
-    return false; 
-}
-
-
-static void reverseMemory(void* memory, size_t size) {
-  char* start = static_cast<char*>(memory);
-  char* end = start + size - 1;
-
-  while (start < end) {
-    char temp = *start;
-    *start = *end;
-    *end = temp;
-
-    start++;
-    end--;
   }
 }
 
@@ -203,18 +141,19 @@ void PtcClient::TcpFlushIn() {
   u8Array_t u8Buf(1500, 0);
   int len = 0;
   do {
-    len = client_->Receive(u8Buf.data(), static_cast<uint32_t>(u8Buf.size()), 0xFF);
+    len = client_->Receive(u8Buf.data(), static_cast<uint32_t>(u8Buf.size()), MSG_DONTWAIT);
+    if (len > 0) {
+      std::cout << "TcpFlushIn, len " << len << std::endl;
+      for(size_t i = 0; i<u8Buf.size(); i++) {
+        printf("%x ", u8Buf[i]);
+      }
+    }
   } while (len > 0);
 }
 
 int PtcClient::QueryCommand(u8Array_t &byteStreamIn,
                                        u8Array_t &byteStreamOut,
-                                       uint8_t u8Cmd, 
-                                       bool isHaveHeader) {
-  if (!IsOpen()) {
-    LogError("Client is not open, cannot send command.");
-    return -1;
-  }
+                                       uint8_t u8Cmd) {
   LockS lock(_mutex);
   int ret = 0;
   u8Array_t encoded;
@@ -223,8 +162,6 @@ int PtcClient::QueryCommand(u8Array_t &byteStreamIn,
   TcpFlushIn();
 
   int nLen = client_->Send(encoded.data(), static_cast<uint16_t>(encoded.size()));
-  std::string sendMsg = BytePrinter::getInstance().printByteArrayToString(encoded);
-  ProduceLogMessage("SEND: " + sendMsg);
   if (nLen != (int)encoded.size()) {
     LogWarning("send failure, %d.", nLen);
     ret = -1;
@@ -245,7 +182,7 @@ int PtcClient::QueryCommand(u8Array_t &byteStreamIn,
     bool bHeaderFound = false;
     int nValidDataLen = 0;
     while (nLeft > 0) {
-      int nOnceRecvLen = client_->Receive(pRecvHeaderBuf, static_cast<uint32_t>(nLeft));
+      nOnceRecvLen = client_->Receive(pRecvHeaderBuf, static_cast<uint32_t>(nLeft));
       if (nOnceRecvLen <= 0) break;
 
       if (!bHeaderFound) {
@@ -276,8 +213,7 @@ int PtcClient::QueryCommand(u8Array_t &byteStreamIn,
       if(ptc_version_ == 1) {
         PTCHeader_1_0 *pPTCHeader = reinterpret_cast<PTCHeader_1_0 *>(u8HeaderBuf.data());
         if (!pPTCHeader->IsValidReturnCode() || pPTCHeader->cmd_ != u8Cmd) {
-          LogWarning("PtcClient::QueryCommand, RspCode invalid:%u, return_cmd:%u, cmd:%u", pPTCHeader->return_code_, pPTCHeader->cmd_, u8Cmd);
-          ret_code_ = pPTCHeader->GetReturnCode();
+          LogWarning("PtcClient::QueryCommand, RspCode invalid:%u", pPTCHeader->return_code_);
           ret = -1;
         } else {
           nPayLoadLen = static_cast<int>(pPTCHeader->GetPayloadLen());
@@ -285,8 +221,7 @@ int PtcClient::QueryCommand(u8Array_t &byteStreamIn,
       } else {
         PTCHeader_2_0 *pPTCHeader = reinterpret_cast<PTCHeader_2_0 *>(u8HeaderBuf.data());
         if (!pPTCHeader->IsValidReturnCode() || pPTCHeader->cmd_ != u8Cmd) {
-          LogWarning("PtcClient::QueryCommand,RspCode invalid:%u, return_cmd:%u, cmd:%u", pPTCHeader->return_code_, pPTCHeader->cmd_, u8Cmd);
-          ret_code_ = pPTCHeader->GetReturnCode();
+          LogWarning("PtcClient::QueryCommand,RspCode invalid:%u", pPTCHeader->return_code_);
           ret = -1;
         } else {
           nPayLoadLen = static_cast<int>(pPTCHeader->GetPayloadLen());
@@ -308,7 +243,7 @@ int PtcClient::QueryCommand(u8Array_t &byteStreamIn,
 
     nLeft = nPayLoadLen;
     while (nLeft > 0) {
-      int nOnceRecvLen = client_->Receive(pBodyBuf, static_cast<uint32_t>(nLeft));
+      nOnceRecvLen = client_->Receive(pBodyBuf, static_cast<uint32_t>(nLeft));
       if (nOnceRecvLen <= 0) {
         break;
       }
@@ -331,22 +266,11 @@ int PtcClient::QueryCommand(u8Array_t &byteStreamIn,
       }
       //将收到的bodyBuf拷贝到最终要传出的buf
       pBodyBuf = u8BodyBuf.data();
-      memcpy(byteStreamOut.data() + offset, pBodyBuf, static_cast<size_t>(nPayLoadLen));
-    }
-  }
-  else {
-    if (isHaveHeader) {
-      int header_size = ptc_parser_->GetPtcParserHeaderSize();
-      byteStreamOut.resize(header_size);
-      memcpy(byteStreamOut.data(), u8HeaderBuf.data(), static_cast<size_t>(header_size));
+      memcpy(byteStreamOut.data(), pBodyBuf, static_cast<size_t>(nPayLoadLen));
     }
   }
 
-  std::string returnPayload = BytePrinter::getInstance().printByteArrayToString(byteStreamOut);
-  if (ret != 0) {
-    returnPayload = "ret_code is " + std::to_string(ret_code_);
-  }
-  ProduceLogMessage("RECV: " + returnPayload);
+  LogDebug("exec time: %fms", (GetMicroTickCount() - tick) / 1000.f);
 
   LogDebug("exec time: %fms", (GetMicroTickCount() - tick) / 1000.f);
   return ret;
@@ -592,19 +516,6 @@ bool PtcClient::SetTmbFPGARegister(uint32_t address, uint32_t data)
   input.push_back(static_cast<uint8_t>(data >> 0));
   if (this->QueryCommand(input, output, 0xff) != 0)
     return false;
-  return true;
-}
-
-bool PtcClient::GetFPGARegister(uint32_t address, uint32_t &data)
-{
-  u8Array_t input, output;
-  input.push_back(static_cast<uint8_t>(address >> 24));
-  input.push_back(static_cast<uint8_t>(address >> 16));
-  input.push_back(static_cast<uint8_t>(address >> 8));
-  input.push_back(static_cast<uint8_t>(address >> 0));
-  if (this->QueryCommand(input, output, kPTCGetFpgaRegister) != 0)
-    return false;
-  data = static_cast<uint32_t>(output[0] << 24 | output[1] << 16 | output[2] << 8 | output[3]);
   return true;
 }
 

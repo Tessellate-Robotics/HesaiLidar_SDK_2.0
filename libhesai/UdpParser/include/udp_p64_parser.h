@@ -49,9 +49,15 @@ class UdpP64Parser : public GeneralParser<T_Point> {
   UdpP64Parser();
   virtual ~UdpP64Parser();
 
-  virtual int DecodePacket(LidarDecodedFrame<T_Point> &frame, const UdpPacket& udpPacket, const int packet_index = -1);
-  virtual int ComputeXYZI(LidarDecodedFrame<T_Point> &frame, uint32_t packet_index);
-  virtual void setFrameRightMemorySpace(LidarDecodedFrame<T_Point> &frame);
+  // covert a origin udp packet to decoded data, and pass the decoded data to a frame struct to reduce memory copy
+  virtual int DecodePacket(LidarDecodedFrame<T_Point> &frame, const UdpPacket& udpPacket);
+  // compute xyzi of points from decoded packet
+  // param packet is the decoded packet; xyzi of points after computed is puted in frame     
+  virtual int ComputeXYZI(LidarDecodedFrame<T_Point> &frame, int packet_index);
+
+  // determine whether frame splitting is needed
+  bool IsNeedFrameSplit(uint16_t azimuth);
+
  private:
 };
 }  // namespace lidar

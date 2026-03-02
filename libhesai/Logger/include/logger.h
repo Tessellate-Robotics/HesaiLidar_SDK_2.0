@@ -73,11 +73,11 @@ enum LOGTARGET
 #else
 #define __FUNCTION_NAME__ __PRETTY_FUNCTION__
 #endif
-#define LogDebug(...)        Logger::GetInstance().AddToQueue(HESAI_LOG_DEBUG, __FILE__, __LINE__, __FUNCTION_NAME__, __VA_ARGS__)  
-#define LogInfo(...)        Logger::GetInstance().AddToQueue(HESAI_LOG_INFO, __FILE__, __LINE__, __FUNCTION_NAME__, __VA_ARGS__)  
-#define LogWarning(...)     Logger::GetInstance().AddToQueue(HESAI_LOG_WARNING, __FILE__, __LINE__, __FUNCTION_NAME__, __VA_ARGS__)  
-#define LogError(...)       Logger::GetInstance().AddToQueue(HESAI_LOG_ERROR, __FILE__, __LINE__, __FUNCTION_NAME__, __VA_ARGS__)
-#define LogFatal(...)       Logger::GetInstance().AddToQueue(HESAI_LOG_FATAL, __FILE__, __LINE__, __FUNCTION_NAME__, __VA_ARGS__)    
+#define LogDebug(...)        Logger::GetInstance().AddToQueue(LOG_DEBUG, __FILE__, __LINE__, __FUNCTION_NAME__, __VA_ARGS__)  
+#define LogInfo(...)        Logger::GetInstance().AddToQueue(LOG_INFO, __FILE__, __LINE__, __FUNCTION_NAME__, __VA_ARGS__)  
+#define LogWarning(...)     Logger::GetInstance().AddToQueue(LOG_WARNING, __FILE__, __LINE__, __FUNCTION_NAME__, __VA_ARGS__)  
+#define LogError(...)       Logger::GetInstance().AddToQueue(LOG_ERROR, __FILE__, __LINE__, __FUNCTION_NAME__, __VA_ARGS__)
+#define LogFatal(...)       Logger::GetInstance().AddToQueue(LOG_FATAL, __FILE__, __LINE__, __FUNCTION_NAME__, __VA_ARGS__)    
 
 class LOG_LIB_API Logger  
 {  
@@ -85,6 +85,14 @@ public:
   static Logger& GetInstance();  
 
   void SetFileName(const char* filename);  
+
+  bool Start();  
+  void Stop();  
+  
+  void AddToQueue(LOGLEVEL loglevel, const char* pszFile, int lineNo, const char* pszFuncSig, const char* pszFmt, ...); 
+  void setLogLevelRule(uint8_t rule);
+  void setLogTargetRule(uint8_t rule);
+  void bindLogCallback(std::function<void(LOGLEVEL loglevel, const char* pszFile, int lineNo, const char* pszFuncSig, char* pszFmt)> log_callback);
 
   bool Start();  
   void Stop();  

@@ -55,7 +55,7 @@ typedef int socklen_t;
 using namespace hesai::lidar;
 using std::placeholders::_1;
 using std::placeholders::_2;
-static int tcp_try_open(uint16_t host_port,const char* ipaddr, int port, uint32_t timeout) {
+static int tcp_try_open(const char* ipaddr, int port, uint32_t timeout) {
   #ifdef _MSC_VER
   WSADATA wsaData;
   WORD version = MAKEWORD(2, 2);
@@ -66,7 +66,6 @@ static int tcp_try_open(uint16_t host_port,const char* ipaddr, int port, uint32_
   }
 #endif  
   struct sockaddr_in serverAddr;
-  struct sockaddr_in localAddr;
   int sockfd;
   sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 
@@ -75,17 +74,6 @@ static int tcp_try_open(uint16_t host_port,const char* ipaddr, int port, uint32_
     WSACleanup();
 #endif
     return -1;
-  }
-
-  if (host_port > 0) {
-    memset(&localAddr, 0, sizeof(localAddr));
-    localAddr.sin_family = AF_INET;
-    localAddr.sin_addr.s_addr = htonl(INADDR_ANY); 
-    localAddr.sin_port = htons(host_port);
-  
-    if (bind(sockfd, (struct sockaddr*)&localAddr, sizeof(localAddr)) < 0) {
-      LogError("Failed to bind local port, system will auto assign one");
-    }
   }
 
   memset(&serverAddr, 0, sizeof(serverAddr));
@@ -296,8 +284,7 @@ bool TcpSslClient::IsOpened(bool bExpectation) {
   return m_bLidarConnected == bExpectation;
 }
 
-bool TcpSslClient::TryOpen(uint16_t host_port, 
-                        std::string IPAddr, 
+bool TcpSslClient::TryOpen(std::string IPAddr, 
                         uint16_t u16Port,
                         bool bAutoReceive, 
                         const char* cert, 
@@ -318,7 +305,7 @@ bool TcpSslClient::TryOpen(uint16_t host_port,
   if(ctx_ == NULL) {
 		return false;
 	}
-  tcpsock_ = tcp_try_open(host_port, m_sServerIP.c_str(), ptc_port_, timeout);
+  tcpsock_ = tcp_try_open(m_sServerIP.c_str(), ptc_port_, timeout);
   if((int)tcpsock_ != -1) {
 		LogError("Connect to Server Failed!~!~");
     Close();
@@ -470,7 +457,7 @@ int TcpSslClient::Send(uint8_t *u8Buf, uint16_t u16Len, int flags) {
 }
 
 int TcpSslClient::Receive(uint8_t *u8Buf, uint32_t u32Len, int flags) {
-  if (flags == 0xFF) return -1;
+  (void)flags;
   int len = -1;
   bool ret = true;
   
@@ -489,7 +476,7 @@ int TcpSslClient::Receive(uint8_t *u8Buf, uint32_t u32Len, int flags) {
   int delta = GetMicroTickCount() - tick;
 
   if (delta >= 1000000) {
-    LogDebug("Receive execu: %dus", delta);
+    LogWarning("Receive execu: %dus", delta);
   }
 
   return len;

@@ -30,22 +30,12 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #define LENS_AZIMUTH_AREA_NUM (12)
 #define LENS_ELEVATION_AREA_NUM (8)
-namespace hesai
-{
-namespace lidar
-{
-#define faultmessagePrint printf
-#pragma pack(push, 1)
+
 enum LensDirtyState {
   kUndefineData = -1,
   kLensNormal = 0,
   kPassable = 1,
   kUnPassable = 3,
-};
-
-struct MultiplexingInfo {
-  uint8_t blockage_flag;
-  uint16_t average_energy;
 };
 
 struct FaultMessageInfo4_3 {
@@ -61,18 +51,18 @@ struct FaultMessageInfo4_3 {
   uint8_t high_temperture_shutdown_state;
   uint8_t reversed[3];
   void Print() const {
-    faultmessagePrint("faultcode_type: %d\n", fault_code_type);
-    faultmessagePrint("rolling_counter: %u\n", rolling_counter);
-    faultmessagePrint("tdm_data_indicate: %d\n", tdm_data_indicate);
-    faultmessagePrint("tdm_data:");
+    printf("faultcode_type: %d\n", fault_code_type);
+    printf("rolling_counter: %u\n", rolling_counter);
+    printf("tdm_data_indicate: %d\n", tdm_data_indicate);
+    printf("tdm_data:");
     for (int i = 0; i < 27; i++) {
-      faultmessagePrint(" 0x%02x", time_division_multiplexing[i]);
+      printf(" 0x%02x", time_division_multiplexing[i]);
     }
-    faultmessagePrint("\n");
-    faultmessagePrint("software_id: %04x, software_version: %04x, hardware_version: %04x, bt_version: %04x\n", 
+    printf("\n");
+    printf("software_id: %04x, software_version: %04x, hardware_version: %04x, bt_version: %04x\n", 
             software_id, software_version, hardware_version, bt_version);
-    faultmessagePrint("heating_state: %d\n", heating_state);
-    faultmessagePrint("lidar_high_temp_state: %d\n", high_temperture_shutdown_state);
+    printf("heating_state: %d\n", heating_state);
+    printf("lidar_high_temp_state: %d\n", high_temperture_shutdown_state);
   }
 };
 
@@ -86,19 +76,19 @@ struct FaultMessageInfo4_7 {
   uint8_t iteration_version;
   uint8_t reversed[17];
   void Print() const {
-    faultmessagePrint("tdm_data_indicate: %d\n", tdm_data_indicate);
-    faultmessagePrint("tdm_data:");
+    printf("tdm_data_indicate: %d\n", tdm_data_indicate);
+    printf("tdm_data:");
     for (int i = 0; i < 14; i++) {
-      faultmessagePrint(" 0x%02x", time_division_multiplexing[i]);
+      printf(" 0x%02x", time_division_multiplexing[i]);
     }
-    faultmessagePrint("\n");
-    faultmessagePrint("internal_fault_id: %d\n", internal_fault_id);
-    faultmessagePrint("tdm_data:");
+    printf("\n");
+    printf("internal_fault_id: %d\n", internal_fault_id);
+    printf("tdm_data:");
     for (int i = 0; i < 8; i++) {
-      faultmessagePrint(" 0x%02x", fault_indicate[i]);
+      printf(" 0x%02x", fault_indicate[i]);
     }
-    faultmessagePrint("\n");
-    faultmessagePrint("customer_id: %02x, software_version: %02x, iteration_version: %02x\n", 
+    printf("\n");
+    printf("customer_id: %02x, software_version: %02x, iteration_version: %02x\n", 
             customer_id, software_version, iteration_version);
   }
 };
@@ -109,10 +99,9 @@ union FaultMessageUnionInfo {
 };
 
 struct FaultMessageInfo {
-  uint16_t fault_parse_version;
+  uint8_t fault_parse_version;
   uint8_t version;
   uint8_t utc_time[6];
-  uint32_t timestamp_sec;
   uint32_t timestamp;
   double total_time;
   uint8_t operate_state;
@@ -121,26 +110,20 @@ struct FaultMessageInfo {
   uint8_t faultcode_id;
   uint32_t faultcode;
   FaultMessageUnionInfo union_info;
-  inline uint8_t getVersion() { return version; }
-  inline uint8_t getLidarState() { return operate_state; }
-  inline uint8_t getFaultState() { return fault_state; }
-  inline uint8_t getFaultNum() { return total_faultcode_num; }
-  inline uint32_t getFaultCode() { return faultcode; }
   void Print() const {
-    faultmessagePrint("version: %u\n", version);
-    faultmessagePrint("utc_time: %u.%u.%u %u:%u:%u.%u\n", utc_time[0], utc_time[1], 
+    printf("version: %u\n", version);
+    printf("utc_time: %u.%u.%u %u:%u:%u.%u\n", utc_time[0], utc_time[1], 
             utc_time[2], utc_time[3], utc_time[4], utc_time[5], timestamp);
-    faultmessagePrint("timestamp: %u.%u\n", timestamp_sec, timestamp);
-    faultmessagePrint("total_time: %lf\n", total_time);
-    faultmessagePrint("operate_state: %u\n", operate_state);
-    faultmessagePrint("fault_state: %d\n", fault_state);
-    faultmessagePrint("total_faultcode_num: %d, faultcode_id: %d, faultcode: 0x%08x\n", 
+    printf("total_time: %lf\n", total_time);
+    printf("operate_state: %u\n", operate_state);
+    printf("fault_state: %d\n", fault_state);
+    printf("total_faultcode_num: %d, faultcode_id: %d, faultcode: 0x%08x\n", 
             total_faultcode_num, faultcode_id, faultcode);
     switch (fault_parse_version) {
-      case 0x0403:
+      case 0x43:
         union_info.fault4_3.Print();
         break;
-      case 0x0407:
+      case 0x47:
         union_info.fault4_7.Print();
         break;
       default:
@@ -148,8 +131,5 @@ struct FaultMessageInfo {
     }
   }
 };
-#pragma pack(pop)
 
-}
-}
 #endif

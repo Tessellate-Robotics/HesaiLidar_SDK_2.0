@@ -85,7 +85,6 @@ bool Logger::Start()
   
 void Logger::Stop()  
 {   
-    std::lock_guard<std::mutex> guard(mutex_running);  
     if (running_ != true) return;
     exit_ = true;  
     cv_.notify_one();  
@@ -135,8 +134,22 @@ void Logger::AddToQueue(LOGLEVEL loglevel, const char* pszFile, int lineNo, cons
     else{
         logLevel = "";
     }
-
-    if (log_target_rule_ & HESAI_LOG_TARGET_FILE)
+    sprintf(content, "[%04d-%02d-%02d %02d:%02d:%02d][%s][0x%04x][%s:%d %s]%s\n",  
+                tmstr->tm_year + 1900,  
+                tmstr->tm_mon + 1,  
+                tmstr->tm_mday,  
+                tmstr->tm_hour,  
+                tmstr->tm_min,  
+                tmstr->tm_sec,  
+                logLevel,  
+                (unsigned int)std::hash<std::thread::id>{}(std::this_thread::get_id()),
+                pszFile,  
+                lineNo,  
+                pszFuncSig,  
+                msg);  
+  
+    
+	if (log_target_rule_ & LOG_TARGET_FILE)
 	{
         snprintf(content, sizeof(content), "[%04d-%02d-%02d %02d:%02d:%02d][%s][0x%04x][%s:%d %s]%s\n",  
                     tmstr->tm_year + 1900,  

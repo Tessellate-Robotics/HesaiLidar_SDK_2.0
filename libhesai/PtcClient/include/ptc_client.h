@@ -87,7 +87,6 @@ class PtcClient {
  public:
   using Mutex = std::mutex;
   using LockS = std::lock_guard<Mutex>;
-  using CallbackType = std::function<void(const std::string&)>; // 函数指针 std::function
  public:
   PtcClient(std::string IP = kLidarIPAddr
             , uint16_t u16TcpPort = kTcpPort
@@ -98,20 +97,18 @@ class PtcClient {
             , std::string private_key = ""
             , std::string ca = ""
             , uint32_t u32RecvTimeoutMs = 500
-            , uint32_t u32SendTimeoutMs = 500
-            , float ptc_connect_timeout = -1
-            , uint16_t u16HostPort = 0);
+            , uint32_t u32SendTimeoutMs = 500);
   ~PtcClient();
 
   PtcClient(const PtcClient &orig) = delete;
   PtcClient& operator=(const PtcClient&) = delete;
 
   bool IsValidRsp(u8Array_t &byteStreamIn);
-  bool IsOpen();
+  bool IsOpen() { return client_->IsOpened(); }
 
   void TcpFlushIn();
   void TryOpen();
-  int QueryCommand(u8Array_t &byteStreamIn, u8Array_t &byteStreamOut, uint8_t u8Cmd, bool isHaveHeader = false);
+  int QueryCommand(u8Array_t &byteStreamIn, u8Array_t &byteStreamOut, uint8_t u8Cmd );
   int SendCommand(u8Array_t &byteStreamIn, uint8_t u8Cmd);
   bool GetValFromOutput(uint8_t cmd, uint8_t retcode, const u8Array_t &payload, int start_pos, int length, u8Array_t &res);
 
@@ -258,18 +255,15 @@ class PtcClient {
   std::shared_ptr<ClientBase> client_;
   std::shared_ptr<PtcParser> ptc_parser_;
   std::thread *open_thread_ptr_;
+  bool InitOpen = true;
   std::string lidar_ip_;
   uint16_t tcp_port_;
-  uint16_t host_port_;
   bool auto_receive_;
-  std::string cert_;
-  std::string private_key_;
-  std::string ca_;
+  const char* cert_;
+  const char* private_key_;
+  const char* ca_;
   uint32_t recv_timeout_ms_;
   uint32_t send_timeout_ms_;
-  float ptc_connect_timeout_;
-  UpgradeProgressFunc_t upgradeProcessFunc;
-  CallbackType log_message_handler_callback_ = nullptr;
 };
 }
 }

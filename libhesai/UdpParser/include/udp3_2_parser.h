@@ -53,15 +53,28 @@ class Udp3_2Parser : public GeneralParser<T_Point> {
   virtual int ComputeXYZI(LidarDecodedFrame<T_Point> &frame, uint32_t packet_index);
 
   // get lidar firetime correction file from local file,and pass to udp parser 
-  virtual void LoadFiretimesFile(const std::string& firetimes_path);
-  virtual int LoadFiretimesString(const char *firetimes_string, int len);
-  // get the pointer to the struct of the parsed correction file or firetimes file
-  virtual void* getStruct(const int type);
+  virtual int LoadFiretimesString(char *firetimes_string);
+  virtual void LoadFiretimesFile(std::string firetimes_path);
+
+  using GeneralParser<T_Point>::GetFiretimesCorrection;
+  // compute lidar distance correction
+  double GetFiretimesCorrection(int laserId, double speed, int loopIndex);
 
   // get lidar correction file from local file,and pass to udp parser 
   int LoadChannelConfigFile(const std::string channel_config_path);
   int LoadChannelConfigString(char *channel_config_content);
-  virtual void setFrameRightMemorySpace(LidarDecodedFrame<T_Point> &frame);
+  void LoadChannelConfigFile(std::string channel_config_path);
+  
+  // covert a origin udp packet to decoded data, and pass the decoded data to a frame struct to reduce memory copy
+  virtual int DecodePacket(LidarDecodedFrame<T_Point> &frame, const UdpPacket& udpPacket);
+
+  // compute xyzi of points from decoded packet
+  // param packet is the decoded packet; xyzi of points after computed is puted in frame  
+  virtual int ComputeXYZI(LidarDecodedFrame<T_Point> &frame, int packet_index); 
+  
+  // determine whether frame splitting is needed
+  bool IsNeedFrameSplit(uint16_t azimuth);               
+
  private:
   int horizontal_resolution_mode = -1;
   int loop_num = -1;

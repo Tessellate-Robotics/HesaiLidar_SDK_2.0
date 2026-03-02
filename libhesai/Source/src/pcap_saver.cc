@@ -101,7 +101,7 @@ int PcapSaver::Save() {
                 while (!dumping_blocked_ && (packets_cache_ != nullptr && packets_cache_->not_empty())) {
                     auto pkt = packets_cache_->pop_front();
                     auto& len = pkt.size;
-                    std::array<uint8_t, kBufSize> data_with_fake_header;
+                    std::array<uint8_t, 1500> data_with_fake_header;
                     *(PcapUDPHeader*)data_with_fake_header.data() = PcapUDPHeader(len & 0xFFFF, pkt.port);
                     std::memcpy(data_with_fake_header.data() + sizeof(PcapUDPHeader), pkt.buffer, len);
                     PcapRecord pcap_record;
@@ -150,7 +150,7 @@ void PcapSaver::TcpDump(const uint8_t* data, uint32_t data_len, uint32_t max_pkt
     while ( remain_len > 0 ) {
         uint32_t pkt_len = (remain_len > max_pkt_len) ? max_pkt_len : remain_len;
             
-        std::array<uint8_t, kBufSize> data_with_fake_header;
+        std::array<uint8_t, 1500> data_with_fake_header;
         *(PcapTCPHeader*)data_with_fake_header.data() = PcapTCPHeader(pkt_len & 0xFFFF, port);
         std::memcpy(data_with_fake_header.data() + sizeof(PcapTCPHeader), data + i * max_pkt_len, pkt_len);
         PcapRecord pcap_record;

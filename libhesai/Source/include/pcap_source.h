@@ -148,11 +148,6 @@ struct PcapTCPv6Header : public PcapIPv6Header {
 static_assert(sizeof(PcapTCPv6Header) == 74);
 #pragma pack(pop)
 
-enum ByteOrder {
-    BYTE_ORDER_NATIVE,
-    BYTE_ORDER_SWAPPED
-};
-
 class PcapSource : public Source {
 public:
     using Callback = std::function<int(const uint8_t*, uint32_t)>;
@@ -203,10 +198,6 @@ public:
     int distinationPort();
     void setPacketInterval(int microsecond);
     virtual void SetSocketBufferSize(uint32_t u32BufSize) { (void)u32BufSize; };
-    virtual void SetPcapLoop(bool loop) { is_loop = loop; };
-    inline uint16_t convert_endian_16(uint16_t value);
-    inline uint32_t convert_endian_32(uint32_t value);
-    uint64_t getPacketTimestamp(const PcapRecord& record);
 };
 }  // namespace lidar
 }  // namespace hesai

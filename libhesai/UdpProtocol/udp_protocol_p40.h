@@ -97,24 +97,31 @@ struct HS_LIDAR_TAIL_L40 {
     last_utc_time.last_utc[4] = m_u8UTC[4];
     last_utc_time.last_utc[5] = m_u8UTC[5];
 
-    struct tm t = {0};
-    t.tm_year = m_u8UTC[0];
-    if (t.tm_year < 70) {
-        t.tm_year += 100;
-    }
-    t.tm_mon = m_u8UTC[1] - 1;
-    t.tm_mday = m_u8UTC[2] + 1;
-    t.tm_hour = m_u8UTC[3];
-    t.tm_min = m_u8UTC[4];
-    t.tm_sec = m_u8UTC[5];
-    t.tm_isdst = 0;
+  uint64_t GetMicroLidarTimeU64() const {
+      if (m_u8UTC[0] != 0) {
+          struct tm t = {0};
+          t.tm_year = m_u8UTC[0] + 100;
+          if (t.tm_year >= 200) {
+              t.tm_year -= 100;
+          }
+          t.tm_mon = m_u8UTC[1] - 1;
+          t.tm_mday = m_u8UTC[2] + 1;
+          t.tm_hour = m_u8UTC[3];
+          t.tm_min = m_u8UTC[4];
+          t.tm_sec = m_u8UTC[5];
+          t.tm_isdst = 0;
 #ifdef _MSC_VER
     TIME_ZONE_INFORMATION tzi;
     GetTimeZoneInformation(&tzi);
     long int timezone =  tzi.Bias * 60;
 #endif
-    last_utc_time.last_time = (mktime(&t) - timezone - 86400) * 1000000;
-    return last_utc_time.last_time + GetTimestamp();
+          return (mktime(&t) - timezone - 86400) * 1000000 + GetTimestamp();
+      }
+      else {
+          uint32_t utc_time_big = *(uint32_t*)(&m_u8UTC[0] + 2);
+          uint64_t unix_second = big_to_native(utc_time_big);
+          return unix_second * 1000000 + GetTimestamp();
+      }
   }
 };
 #pragma pack(pop)

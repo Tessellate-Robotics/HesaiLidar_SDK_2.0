@@ -34,10 +34,14 @@ namespace hesai
 {
 namespace lidar
 {
-  namespace JT {
-    static constexpr int kMaxChannelJt16 = 16;
-  }
+
+#ifdef _MSC_VER
+#define PACKED
 #pragma pack(push, 1)
+#else
+#define PACKED __attribute__((packed))
+#endif
+
 struct HS_LIDAR_PRE_HEADER_JT {
   static const uint16_t kDelimiter = 0xffee;
 
@@ -47,34 +51,24 @@ struct HS_LIDAR_PRE_HEADER_JT {
   uint8_t m_u8TimeMultiVersion;
   uint8_t m_u8DataType;
 
-  inline bool IsValidDelimiter() const {
+  bool IsValidDelimiter() const {
     return little_to_native(m_u16Delimiter) == kDelimiter;
   }
-  inline uint8_t GetTimeMultiVersion() const { return m_u8TimeMultiVersion; }
-  inline uint8_t GetDataType() const { return m_u8DataType; }
-};
+  uint8_t GetTimeMultiVersion() const { return m_u8TimeMultiVersion; }
+  uint8_t GetDataType() const { return m_u8DataType; }
+
+  void Print() const {
+    printf("HS_LIDAR_PRE_HEADER_JT:\n");
+    printf("timeMultiVersion:%u, dataType:%u\n", GetTimeMultiVersion(), GetDataType());
+  }
+} PACKED;
 
 struct HS_LIDAR_HEADER_JT {
   uint8_t m_u8UTC[6];
   uint32_t m_u32Timestamp;
 
-  int64_t GetMicroLidarTimeU64(LastUtcTime &last_utc_time) const {
+  int64_t GetMicroLidarTimeU64() const {
     if (m_u8UTC[0] != 0) {
-      if (last_utc_time.last_utc[0] == m_u8UTC[0] 
-        && last_utc_time.last_utc[1] == m_u8UTC[1] 
-        && last_utc_time.last_utc[2] == m_u8UTC[2] 
-        && last_utc_time.last_utc[3] == m_u8UTC[3] 
-        && last_utc_time.last_utc[4] == m_u8UTC[4] 
-        && last_utc_time.last_utc[5] == m_u8UTC[5]) {
-        return last_utc_time.last_time + GetTimestamp();
-      }
-      last_utc_time.last_utc[0] = m_u8UTC[0];
-      last_utc_time.last_utc[1] = m_u8UTC[1];
-      last_utc_time.last_utc[2] = m_u8UTC[2];
-      last_utc_time.last_utc[3] = m_u8UTC[3];
-      last_utc_time.last_utc[4] = m_u8UTC[4];
-      last_utc_time.last_utc[5] = m_u8UTC[5];
-
 			struct tm t = {0};
 			t.tm_year = m_u8UTC[0];
 			if (t.tm_year < 70) {
@@ -91,8 +85,7 @@ struct HS_LIDAR_HEADER_JT {
   GetTimeZoneInformation(&tzi);
   long int timezone =  tzi.Bias * 60;
 #endif
-      last_utc_time.last_time = (mktime(&t) - timezone - 86400) * 1000000;
-      return last_utc_time.last_time + GetTimestamp() ;
+			return (mktime(&t) - timezone - 86400) * 1000000 + GetTimestamp() ;
 		}
 		else {
       uint32_t utc_time_big = *(uint32_t*)(&m_u8UTC[0] + 2);
@@ -104,48 +97,79 @@ struct HS_LIDAR_HEADER_JT {
 		}
   }
 
-  inline uint32_t GetTimestamp() const { return little_to_native(m_u32Timestamp); }
-  inline uint8_t GetUTCData(uint8_t index) const {
+  uint32_t GetTimestamp() const { return little_to_native(m_u32Timestamp); }
+  uint8_t GetUTCData(uint8_t index) const {
     return m_u8UTC[index < sizeof(m_u8UTC) ? index : 0];
   }
-};
+
+  void Print() const {
+    printf("HS_LIDAR_HEADER_JT:\n");
+    printf("timestamp:%u, utc:%u %u %u %u %u %u\n", GetTimestamp(),GetUTCData(0), 
+            GetUTCData(1), GetUTCData(2), GetUTCData(3), GetUTCData(4), GetUTCData(5));
+  }
+} PACKED;
 
 struct HS_LIDAR_TAIL_JT {
   uint32_t m_u32Crc;
 
-  inline uint32_t GetCrc() const { return little_to_native(m_u32Crc); }
-};
+  uint32_t GetCrc() const { return little_to_native(m_u32Crc); }
+
+  void Print() const {
+    printf("HS_LIDAR_TAIL_JT:\n");
+    printf("crc:0x%08x\n", GetCrc());
+  }
+} PACKED;
 
 struct HS_LIDAR_BODY_AZIMUTH_JT {
   uint16_t m_u16Azimuth;
 
-  inline uint16_t GetAzimuth() const { return little_to_native(m_u16Azimuth); }
-};
+  uint16_t GetAzimuth() const { return little_to_native(m_u16Azimuth); }
+
+  void Print() const {
+    printf("HS_LIDAR_BODY_AZIMUTH_JT: azimuth:%u\n", GetAzimuth());
+  }
+} PACKED;
 
 struct HS_LIDAR_BODY_CHN_UNIT_JT {
   uint16_t m_u16Distance;
   uint8_t m_u8Reflectivity;
 
-  inline uint16_t GetDistance() const { return little_to_native(m_u16Distance); }
-  inline uint8_t GetReflectivity() const { return m_u8Reflectivity; }
-};
+  uint16_t GetDistance() const { return little_to_native(m_u16Distance); }
+  uint8_t GetReflectivity() const { return m_u8Reflectivity; }
+  void Print() const {
+    printf("HS_LIDAR_BODY_CHN_UNIT_JT:\n");
+    printf("Dist:%u, Reflectivity: %u\n", GetDistance(), GetReflectivity());
+  }
+} PACKED;
 
 struct HS_LIDAR_BODY_POINT_JT {
-  uint32_t m_u32DirtyDegree;
+  uint8_t m_u8DirtyDegree[4];
   uint8_t m_u8LidarState;
   uint8_t m_u8ReservedId;
   uint16_t m_u16ReservedInfo;
   uint16_t m_u16SequenceNum;
 
 
-  inline uint8_t GetDirtyDegree(uint8_t index) const { 
-    return static_cast<uint8_t>((m_u32DirtyDegree >> (index * 2)) & 0x03);
+  uint8_t GetDirtyDegree(uint8_t index) const { 
+    index = index < (sizeof(m_u8DirtyDegree) * 4) ? index : 0;
+    return (m_u8DirtyDegree[uint8_t(index / 4)] >> uint8_t(index % 4) * 2) & 0x03;
   }
-  inline uint8_t GetLidarState() const { return m_u8LidarState; }
-  inline uint8_t GetReservedId() const { return m_u8ReservedId; }
-  inline uint16_t GetReservedInfo() const { return little_to_native(m_u16ReservedInfo); }
-  inline uint16_t GetSequenceNum() const { return little_to_native(m_u16SequenceNum); }
-};
+  uint8_t GetLidarState() const { return m_u8LidarState; }
+  uint8_t GetReservedId() const { return m_u8ReservedId; }
+  uint16_t GetReservedInfo() const { return little_to_native(m_u16ReservedInfo); }
+  uint16_t GetSequenceNum() const { return little_to_native(m_u16SequenceNum); }
+
+  void Print() const {
+    printf("HS_LIDAR_BODY_POINT_JT:\n");
+    printf("LidarState:%u, ReservedId: %u, ReservedInfo: %u, SequenceNum: %u, ", 
+            GetLidarState(), GetReservedId(), GetReservedInfo(), GetSequenceNum());
+    printf("DirtyDegree: ");
+    for (uint8_t i = 0; i < sizeof(m_u8DirtyDegree) * 4; i++) {
+      printf("%u ", GetDirtyDegree(i));
+    }
+    printf("\n");
+  }
+} PACKED;
 
 struct HS_LIDAR_BODY_IMU_JT {
   static constexpr double AccelUint = 1 / 8192.0;
@@ -158,27 +182,36 @@ struct HS_LIDAR_BODY_IMU_JT {
   int16_t m_i16IMUZAngVel;
   int16_t m_i16SequenceNum;
 
-  inline double GetIMUXAccel() const {
+  double GetIMUXAccel() const {
     return little_to_native(m_i16IMUXAccel) * AccelUint;
   }
-  inline double GetIMUYAccel() const {
+  double GetIMUYAccel() const {
     return little_to_native(m_i16IMUYAccel) * AccelUint;
   }
-  inline double GetIMUZAccel() const {
+  double GetIMUZAccel() const {
     return little_to_native(m_i16IMUZAccel) * AccelUint;
   }
-  inline double GetIMUXAngVel() const {
+  double GetIMUXAngVel() const {
     return little_to_native(m_i16IMUXAngVel) * AngVelUint;
   }
-  inline double GetIMUYAngVel() const {
+  double GetIMUYAngVel() const {
     return little_to_native(m_i16IMUYAngVel) * AngVelUint;
   }
-  inline double GetIMUZAngVel() const {
+  double GetIMUZAngVel() const {
     return little_to_native(m_i16IMUZAngVel) * AngVelUint;
   }
-  inline uint16_t GetSequenceNum() const { return little_to_native(m_i16SequenceNum); }
-};
+  uint16_t GetSequenceNum() const { return little_to_native(m_i16SequenceNum); }
+
+  void Print() const {
+    printf("HS_LIDAR_TAIL_IMU_ME_V4:\n");
+    printf("XAccel:%f, YAccel:%f, ZAccel:%f, XAngVel:%f, YAngVel:%f, ZAngVel:%f, SequenceNum:%u\n",
+           GetIMUXAccel(), GetIMUYAccel(), GetIMUZAccel(), GetIMUXAngVel(), GetIMUYAngVel(), GetIMUZAngVel(), GetSequenceNum());
+  }
+} PACKED;
+
+#ifdef _MSC_VER
 #pragma pack(pop)
+#endif
 }  // namespace lidar
 }  // namespace hesai
 #endif

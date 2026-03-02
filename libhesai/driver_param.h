@@ -43,7 +43,6 @@ enum SourceType
   DATA_FROM_PCAP = 2,
   DATA_FROM_ROS_PACKET = 3,
   DATA_FROM_SERIAL = 4,
-  DATA_FROM_LIDAR_TCP = 5,
 };
 
 enum PtcMode
@@ -82,17 +81,9 @@ typedef struct DecoderParam
   uint16_t use_timestamp_type = point_cloud_timestamp;
   int fov_start = -1;
   int fov_end = -1;
-  bool distance_correction_flag = false;
+  bool distance_correction_lidar_flag = false;
   bool xt_spot_correction = false;
-  bool et_blooming_filter_flag = false;
-  RemakeConfig remake_config;
   uint32_t socket_buffer_size = 0;
-  std::string channel_fov_filter_path = "";  // correction/config/channel_fov_filter.txt
-  std::string multi_fov_filter_ranges = "";  // multiple fov filter ranges, for all channels
-  float frame_frequency = 0;
-  float default_frame_frequency = DEFAULT_MAX_MULTI_FRAME_NUM;
-  bool update_function_safety_flag = false;
-  uint16_t echo_mode_filter = 0;
 } DecoderParam;
 
 ///< The LiDAR input parameter
@@ -108,16 +99,13 @@ typedef struct InputParam
   ///< Address of multicast
   std::string multicast_ip_address = "";  
   ///< Address of host
-  std::string host_ip_address = ""; 
+  std::string host_ip_address = "Your host ip"; 
   ///< port filter
   uint16_t device_udp_src_port = 0;
   uint16_t device_fault_port = 0;
-  // udp packet destination port number       
+  ///< udp packet port number       
   uint16_t udp_port = 2368;   
-  uint16_t fault_message_port = 0;
-  ///< ptc packet port number     
-  bool use_ptc_connected = true;         
-  uint16_t host_ptc_port = 0;  // 0 is not used
+  ///< ptc packet port number                
   uint16_t ptc_port = 9347;
   ///< serial port and baudrate
   std::string rs485_com = "/dev/ttyUSB0";
@@ -128,7 +116,6 @@ typedef struct InputParam
   std::string pcap_path = "Your pcap file path";  ///< Absolute path of pcap file
   std::string correction_file_path = "Your correction file path";   ///< Path of angle calibration files(angle.csv).Only used for internal debugging.
   std::string firetimes_path = "Your firetime file path";  ///< Path of firetime files(angle.csv).
-  std::string dcf_file_path = "Your dcf file path";
   std::string correction_save_path = "";
   /// certFile          Represents the path of the user's certificate
   std::string certFile = "";
@@ -173,9 +160,10 @@ typedef struct DriverParam
   DecoderParam decoder_param;  
   ///< The frame id of LiDAR message    
   std::string frame_id = "hesai";  
-  bool use_gpu = false;
-  uint8_t log_level = HESAI_LOG_INFO | HESAI_LOG_WARNING | HESAI_LOG_ERROR | HESAI_LOG_FATAL; //
-  uint8_t log_Target = HESAI_LOG_TARGET_CONSOLE;
+  ///< Lidar type
+  std::string lidar_type = "";  
+  uint8_t log_level = LOG_INFO | LOG_WARNING | LOG_ERROR | LOG_FATAL; //
+  uint8_t log_Target = LOG_TARGET_CONSOLE | LOG_TARGET_FILE;
   std::string log_path = "./log.log";
 } DriverParam;
 }  // namespace lidar

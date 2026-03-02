@@ -14,16 +14,11 @@ bool running = true;
 void lidarCallback(const LidarDecodedFrame<LidarPointXYZICRT>  &frame) {  
   cur_frame_time = GetMicroTickCount();
   if (last_frame_time == 0) last_frame_time = GetMicroTickCount();
-  uint32_t diff = (frame.fParam.IsMultiFrameFrequency() == 0) ?  kMaxTimeInterval : kMaxTimeInterval * frame.multi_rate;
-  if (cur_frame_time - last_frame_time > diff) {
+  if (cur_frame_time - last_frame_time > kMaxTimeInterval) {
     printf("Time between last frame and cur frame is: %u us\n", (cur_frame_time - last_frame_time));
   }
   last_frame_time = cur_frame_time;
-  if (frame.fParam.IsMultiFrameFrequency() == 0) {
-    printf("%ld -> frame:%d points:%u packet:%u start time:%lf end time:%lf\n", GetMicroTimeU64(), frame.frame_index, frame.points_num, frame.packet_num, frame.frame_start_timestamp, frame.frame_end_timestamp);
-  } else {
-    printf("%ld -> frame:%d points:%u packet:%u start time:%lf end time:%lf\n", GetMicroTimeU64(), frame.multi_frame_index, frame.multi_points_num, frame.multi_packet_num, frame.multi_frame_start_timestamp, frame.multi_frame_end_timestamp);
-  }
+  printf("frame:%d points:%u packet:%u start time:%lf end time:%lf\n",frame.frame_index, frame.points_num, frame.packet_num, frame.points[0].timestamp, frame.points[frame.points_num - 1].timestamp) ;
 }
 
 void faultMessageCallback(const FaultMessageInfo& fault_message_info) {
@@ -63,7 +58,8 @@ int main(int argc, char *argv[])
 
   param.use_gpu = (argc > 1);
   // assign param
-#ifdef LIDAR_PARSER_TEST
+  // param.decoder_param.enable_packet_loss_tool = true;
+  param.lidar_type = "";
   param.input_param.source_type = DATA_FROM_LIDAR;
   param.input_param.device_ip_address = "192.168.1.201";  // lidar ip
   param.input_param.ptc_port = 9347; // lidar ptc port
@@ -97,6 +93,15 @@ int main(int argc, char *argv[])
   param.input_param.correction_file_path = "Your correction file path";
   param.input_param.firetimes_path = "Your firetime file path";
 
+  param.input_param.device_ip_address = "192.168.1.201";
+  param.input_param.ptc_port = 9347;
+  param.input_param.udp_port = 2368;
+  param.input_param.rs485_com = "Your serial port name for receiving point cloud";
+  param.input_param.rs232_com = "Your serial port name for sending cmd";
+  param.input_param.host_ip_address = "";
+  param.input_param.multicast_ip_address = "";
+  param.decoder_param.distance_correction_lidar_flag = false;
+  param.decoder_param.socket_buffer_size = 262144000;
 
   param.decoder_param.pcap_play_synchronization = true;
   param.decoder_param.play_rate_ = 1.0;
@@ -122,11 +127,6 @@ int main(int argc, char *argv[])
   //init lidar with param
   sample.Init(param);
 
-#ifdef EXTERNAL_INPUT_PARSER_TEST
-  UdpFrame_t udp_packet_frame;  // Please implement the data import yourself.
-  std::thread producer_thread(packetProducer, std::ref(sample), udp_packet_frame);
-#endif
-
   //assign callback fuction
   sample.RegRecvCallback(lidarCallback);
   sample.RegRecvCallback(faultMessageCallback);
@@ -150,9 +150,6 @@ int main(int argc, char *argv[])
   while (!IsPlayEnded(sample) || GetMicroTickCount() - last_frame_time < 1000000)
   {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
-#ifdef EXTERNAL_INPUT_PARSER_TEST
-    if (running == false) break;
-#endif
   }
 
 #ifdef EXTERNAL_INPUT_PARSER_TEST

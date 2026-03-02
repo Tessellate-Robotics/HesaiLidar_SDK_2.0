@@ -124,19 +124,17 @@ public:
 
     void open(const std::string& pcap_path) {
         close();
-        
-#ifdef _MSC_VER
-        // Windows平台打开文件
-        _fd = CreateFileA(pcap_path.c_str(),
-                         GENERIC_READ,
-                         FILE_SHARE_READ,
-                         NULL,
-                         OPEN_EXISTING,
-                         FILE_ATTRIBUTE_NORMAL,
-                         NULL);
-        if (_fd == INVALID_HANDLE_VALUE) {
-            LogError("Failed to open file: %s", pcap_path.c_str());
-            return;
+        _fpcap.open(pcap_path, std::ios::binary);
+        if (_fpcap.is_open()) {
+            _fpcap.seekg(0, std::ios::end);
+            size_t _Newsize = _fpcap.tellg();
+            if (_Newsize > static_cast<size_t>(std::numeric_limits<std::streamsize>::max())) {   
+                throw std::runtime_error(std::string("File size out of read range (max ")  + std::to_string(
+                    static_cast<size_t>(std::numeric_limits<std::streamsize>::max())) + std::string(" byte), read failed."));
+            }  
+            _fileData.resize(_Newsize);
+            _fpcap.seekg(0, std::ios::beg);
+            _fpcap.read(&_fileData[0], static_cast<std::streamsize>(_Newsize));
         }
 
         // 获取文件大小
@@ -519,7 +517,11 @@ std::string PcapSource::pcap_path() const {
     return pcap_path_;
 }
 
-int PcapSource::next() {                 
+int PcapSource::next(UdpPacket& udpPacket, uint16_t u16Len, int flags,
+                      int timeout) {                 
+    (void)u16Len;
+    (void)timeout;
+    (void)flags;
     if(_p->eof()) {
         if (is_loop) {
             _p->fpos(begin_pos);
@@ -531,14 +533,7 @@ int PcapSource::next() {
     }
     bool ret = _p->read(pcap_record_);
     if (!ret) return -1;
-    if (byte_order_ == BYTE_ORDER_SWAPPED) {
-        pcap_record_.incl_len = convert_endian_32(pcap_record_.incl_len);
-        pcap_record_.orig_len = convert_endian_32(pcap_record_.orig_len);
-        // 时间戳也需要转换
-        pcap_record_.ts_sec = convert_endian_32(pcap_record_.ts_sec);
-        pcap_record_.ts_usec = convert_endian_32(pcap_record_.ts_usec);
-    }
-    if (pcap_record_.incl_len <= kBufSize && pcap_record_.incl_len > sizeof(Ethernet)) {
+    if (pcap_record_.incl_len <= 1500 && pcap_record_.incl_len > sizeof(Ethernet)) {
         ret = _p->read(payload_.data(), pcap_record_.incl_len);
         if (!ret) return -1;
         switch (((Ethernet*)payload_.data())->ether_type)
@@ -549,10 +544,9 @@ int PcapSource::next() {
             case 17:
                 if (pcap_record_.incl_len < sizeof(PcapUDPHeader)) return 1;
                 pcap_udp_header_ = *(const UDP*)(payload_.data() + sizeof(PcapIPHeader));
-                if (udp_callback_)
-                    return udp_callback_(payload_.data() + sizeof(PcapUDPHeader), pcap_record_.incl_len - sizeof(PcapUDPHeader));
-                else 
-                    return 2;
+                if (pcap_record_.incl_len < sizeof(PcapUDPHeader)) return 1;
+                memcpy(udpPacket.buffer, payload_.data() + sizeof(PcapUDPHeader), pcap_record_.incl_len - sizeof(PcapUDPHeader));
+                return pcap_record_.incl_len - sizeof(PcapUDPHeader);
                 break;
             case 6:
                 if (pcap_record_.incl_len < sizeof(PcapTCPHeader)) return 1;
@@ -578,10 +572,9 @@ int PcapSource::next() {
             case 17:
                 if (pcap_record_.incl_len < sizeof(PcapUDPv6Header)) return 1;
                 pcap_udp_header_ = *(const UDP*)(payload_.data() + sizeof(PcapIPv6Header));
-                if (udp_callback_)
-                    return udp_callback_(payload_.data() + sizeof(PcapUDPv6Header), pcap_record_.incl_len - sizeof(PcapUDPv6Header));
-                else 
-                    return 2;
+                if (pcap_record_.incl_len < sizeof(PcapUDPv6Header)) return 1;
+                memcpy(udpPacket.buffer, payload_.data() + sizeof(PcapUDPv6Header), pcap_record_.incl_len - sizeof(PcapUDPv6Header));
+                return pcap_record_.incl_len - sizeof(PcapUDPv6Header);
                 break;
             case 6:
                 if (pcap_record_.incl_len < sizeof(PcapTCPv6Header)) return 1;
@@ -608,23 +601,16 @@ int PcapSource::next() {
                 switch (*((uint8_t*)(payload_.data() + sizeof(Ethernet) + 13)))
                 {
                 case 17:
+                    pcap_udp_header_ = *(const UDP*)(payload_.data() + sizeof(PcapIPHeader));
                     if (pcap_record_.incl_len < sizeof(PcapUDPHeader) + 4) return 1;
-                    pcap_udp_header_ = *(const UDP*)(payload_.data() + sizeof(PcapIPHeader) + 4);
-                    if (udp_callback_)
-                        return udp_callback_(payload_.data() + sizeof(PcapUDPHeader) + 4, pcap_record_.incl_len - (sizeof(PcapUDPHeader) + 4));
-                    else
-                        return 2;
+                    memcpy(udpPacket.buffer, payload_.data() + sizeof(PcapUDPHeader) + 4, pcap_record_.incl_len - sizeof(PcapUDPHeader) - 4);
+                    return pcap_record_.incl_len - sizeof(PcapUDPHeader) - 4;
                     break;
                 case 6:
                     if (pcap_record_.incl_len < sizeof(PcapTCPHeader) + 4) return 1;
-                    pcap_tcp_header_ = *(const TCP*)(payload_.data() + sizeof(PcapIPHeader) + 4);
-                    if (tcp_callback_) {
-                        if(pcap_tcp_header_.getLenres() < sizeof(TCP)) {
-                            return 2;
-                        }
-                        int header_options_len = pcap_tcp_header_.getLenres() - sizeof(TCP);
-                        return tcp_callback_(payload_.data() + sizeof(PcapTCPHeader) + header_options_len, pcap_record_.incl_len - sizeof(PcapTCPHeader) - header_options_len);
-                    }
+                    pcap_tcp_header_ = *(const TCP*)(payload_.data() + sizeof(PcapIPHeader));
+                    if (tcp_callback_)
+                        return pcap_record_.incl_len - sizeof(PcapTCPHeader) - 4;
                     else
                         return 2;
                     break;
@@ -638,22 +624,14 @@ int PcapSource::next() {
                 {
                 case 17:
                     if (pcap_record_.incl_len < sizeof(PcapUDPv6Header) + 4) return 1;
-                    pcap_udp_header_ = *(const UDP*)(payload_.data() + sizeof(PcapIPv6Header) + 4);
-                    if (udp_callback_)
-                        return udp_callback_(payload_.data() + sizeof(PcapUDPv6Header) + 4, pcap_record_.incl_len - (sizeof(PcapUDPv6Header) + 4));
-                    else 
-                        return 2;
+                    pcap_udp_header_ = *(const UDP*)(payload_.data() + sizeof(PcapIPv6Header));
+                    return pcap_record_.incl_len - sizeof(PcapUDPv6Header) - 4;
                     break;
                 case 6:
                     if (pcap_record_.incl_len < sizeof(PcapTCPv6Header) + 4) return 1;
-                    pcap_tcp_header_ = *(const TCP*)(payload_.data() + sizeof(PcapIPv6Header) + 4);
-                    if (tcp_callback_) {
-                        if(pcap_tcp_header_.getLenres() < sizeof(TCP)) {
-                            return 2;
-                        }
-                        int header_options_len = pcap_tcp_header_.getLenres() - sizeof(TCP);
-                        return tcp_callback_(payload_.data() + sizeof(PcapTCPv6Header) + header_options_len, pcap_record_.incl_len - sizeof(PcapTCPv6Header) - header_options_len);
-                    }
+                    pcap_tcp_header_ = *(const TCP*)(payload_.data() + sizeof(PcapIPv6Header));
+                    if (tcp_callback_)
+                        return pcap_record_.incl_len - sizeof(PcapTCPv6Header) - 4;
                     else
                         return 2;
                     break;
@@ -667,7 +645,7 @@ int PcapSource::next() {
             }
             break;
         default:
-            // LogWarning("can not parser Ethernet data, type = %x ", ((Ethernet*)payload_.data())->ether_type);
+        LogWarning("can not parser Ethernet data, type = %x ", ((Ethernet*)payload_.data())->ether_type);
             break;
         }
     }
@@ -794,46 +772,7 @@ bool PcapSource::IsOpened() {
 
 int PcapSource::Receive(UdpPacket& udpPacket, uint16_t u16Len, int flags,
                        int iTimeout) {
-    if (dataIndex + 581 <= dataLength) {
-        memcpy(udpPacket.buffer + 2, m_receiveBuffer, 581);
-        udpPacket.buffer[0] = 0xEE;
-        udpPacket.buffer[1] = 0xFF;
-        dataIndex += 581;
-        return 581 + 2;
-    }
-    callback([&](
-        const uint8_t* data,
-        uint32_t len
-        ) ->int {
-            memcpy(udpPacket.buffer, data, len);
-            return len;
-        }
-    );
-    tcp_callback([&](
-        const uint8_t* data,
-        uint32_t len
-        ) ->int {
-            if (len % 581 != 0) return -1;
-            memcpy(m_receiveBuffer + dataLength, data, len);
-            dataLength += len;
-            if (dataIndex + 581 <= dataLength) {
-                memcpy(udpPacket.buffer + 2, m_receiveBuffer + dataIndex, 581);
-                udpPacket.buffer[0] = 0xEE;
-                udpPacket.buffer[1] = 0xFF;
-                dataIndex += 581;
-                return 581 + 2;
-            }
-            return -1;
-        }
-    );
-    if (dataLength + kBufSize * 5 > kDataMaxLength) {
-      if (dataIndex != dataLength) {
-        memcpy(m_receiveBuffer, m_receiveBuffer + dataIndex, dataLength - dataIndex);
-      }
-      dataLength = dataLength - dataIndex;
-      dataIndex = 0;
-    }
-    return next();
+    return next(udpPacket, u16Len, flags, iTimeout);
 }
 
 int PcapSource::Send(uint8_t* u8Buf, uint16_t u16Len, int flags) {
