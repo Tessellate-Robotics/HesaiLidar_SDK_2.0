@@ -26,6 +26,7 @@ TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF TH
 ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ************************************************************************************************/
 #pragma once
+#include <atomic>
 #include "lidar.h"
 #ifdef USE_CUDA
 #include "udp_parser_gpu.h"
@@ -48,6 +49,8 @@ private:
   std::function<void(const FaultMessageInfo&)> fault_message_cb_;
   std::function<void(const LidarImuData&)> imu_cb_;
   bool is_thread_runing_;
+  std::atomic<bool> start_stop_requested_{false};
+  std::atomic<bool> start_in_progress_{false};
   uint32_t device_ip_address_ = 0;
   uint16_t device_udp_port_ = 0;
   uint16_t device_fault_port_ = 0;
@@ -178,6 +181,10 @@ public:
 
   // stop process thread
   void Stop() {
+    start_stop_requested_ = true;
+    while (start_in_progress_) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
     if (nullptr != runing_thread_ptr_) {
       is_thread_runing_ = false;
       runing_thread_ptr_->join();
@@ -207,10 +214,12 @@ public:
 
   // start process thread
   void Start() {
+    start_in_progress_ = true;
     while(1) {
-      if (lidar_ptr_ == nullptr) { 
+      if (start_stop_requested_) break;
+      if (lidar_ptr_ == nullptr) {
         printf("lidar_ptr_ is nullptr, start failed!!!!!!!!!\n");
-        return;
+        break;
       }
       if ((source_type_ == DATA_FROM_LIDAR && lidar_ptr_->GetInitFinish(FaultMessParse)) || lidar_ptr_->GetInitFinish(AllInitFinish)) {
         runing_thread_ptr_ = new std::thread(std::bind(&HesaiLidarSdk::Run, this));
@@ -219,6 +228,7 @@ public:
       std::this_thread::sleep_for(std::chrono::milliseconds(50));
       if (lidar_ptr_->GetInitFinish(FailInit)) break;
     }
+    start_in_progress_ = false;
   }
 
 
